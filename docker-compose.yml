@@ -1,0 +1,7 @@
+services:
+  frontend:
+    build: ./frontend
+    container_name: photo-editor
+    ports:
+      - "3006:3006"
+    restart: unless-stopped
