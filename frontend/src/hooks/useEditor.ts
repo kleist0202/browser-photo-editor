@@ -21,6 +21,7 @@ type Action =
   | { type: "RESET" }
   | { type: "ADD_PAGE"; src: string }
   | { type: "REMOVE_PAGE"; index: number }
+  | { type: "REORDER_PAGES"; from: number; to: number }
   | { type: "CLEAR_PAGES" };
 
 function reducer(state: State, action: Action): State {
@@ -78,6 +79,17 @@ function reducer(state: State, action: Action): State {
 
     case "REMOVE_PAGE":
       return { ...state, pages: state.pages.filter((_, i) => i !== action.index) };
+
+    case "REORDER_PAGES": {
+      const { from, to } = action;
+      if (from === to || from < 0 || to < 0 || from >= state.pages.length || to >= state.pages.length) {
+        return state;
+      }
+      const next = state.pages.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return { ...state, pages: next };
+    }
 
     case "CLEAR_PAGES":
       return { ...state, pages: [] };

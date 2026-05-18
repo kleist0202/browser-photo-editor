@@ -40,6 +40,7 @@ export default function DropZone({ onFile }: Props) {
         onChange={e => {
           const file = e.target.files?.[0];
           if (file) onFile(file);
+          e.target.value = "";
         }}
       />
     </div>

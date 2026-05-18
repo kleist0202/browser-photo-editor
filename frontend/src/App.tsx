@@ -176,6 +176,7 @@ export default function App() {
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
+              onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin)}
             />
@@ -210,6 +211,7 @@ export default function App() {
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
+              onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin)}
             />
