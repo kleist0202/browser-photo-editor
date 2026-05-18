@@ -9,12 +9,13 @@ type State = {
   history: string[];
   future: string[];
   pages: string[];
+  editingPageIndex: number | null;
   hydrated: boolean;
 };
 
 type Action =
-  | { type: "HYDRATE"; src: string | null; history: string[]; future: string[]; pages: string[] }
-  | { type: "LOAD"; src: string }
+  | { type: "HYDRATE"; src: string | null; history: string[]; future: string[]; pages: string[]; editingPageIndex: number | null }
+  | { type: "LOAD"; src: string; editingPageIndex?: number | null }
   | { type: "COMMIT"; result: string }
   | { type: "UNDO" }
   | { type: "REDO" }
@@ -32,18 +33,26 @@ function reducer(state: State, action: Action): State {
         history: action.history,
         future: action.future,
         pages: action.pages,
+        editingPageIndex: action.editingPageIndex,
         hydrated: true,
       };
 
     case "LOAD":
-      return { src: action.src, history: [], future: [], pages: state.pages, hydrated: true };
+      return {
+        src: action.src,
+        history: [],
+        future: [],
+        pages: state.pages,
+        editingPageIndex: action.editingPageIndex ?? null,
+        hydrated: true,
+      };
 
     case "COMMIT":
       return {
+        ...state,
         src: action.result,
         history: state.src ? [...state.history, state.src] : state.history,
         future: [],
-        pages: state.pages,
         hydrated: true,
       };
 
@@ -51,10 +60,10 @@ function reducer(state: State, action: Action): State {
       const prev = state.history[state.history.length - 1];
       if (!prev || !state.src) return state;
       return {
+        ...state,
         src: prev,
         history: state.history.slice(0, -1),
         future: [state.src, ...state.future],
-        pages: state.pages,
         hydrated: true,
       };
     }
@@ -63,22 +72,37 @@ function reducer(state: State, action: Action): State {
       const [next, ...rest] = state.future;
       if (!next) return state;
       return {
+        ...state,
         src: next,
         history: state.src ? [...state.history, state.src] : state.history,
         future: rest,
-        pages: state.pages,
         hydrated: true,
       };
     }
 
     case "RESET":
-      return { src: null, history: [], future: [], pages: state.pages, hydrated: true };
+      return { ...state, src: null, history: [], future: [], editingPageIndex: null, hydrated: true };
 
-    case "ADD_PAGE":
+    case "ADD_PAGE": {
+      const editing = state.editingPageIndex;
+      if (editing !== null && editing >= 0 && editing < state.pages.length) {
+        const next = state.pages.slice();
+        next[editing] = action.src;
+        return { ...state, pages: next };
+      }
       return { ...state, pages: [...state.pages, action.src] };
+    }
 
-    case "REMOVE_PAGE":
-      return { ...state, pages: state.pages.filter((_, i) => i !== action.index) };
+    case "REMOVE_PAGE": {
+      const idx = action.index;
+      const newPages = state.pages.filter((_, i) => i !== idx);
+      let editing = state.editingPageIndex;
+      if (editing !== null) {
+        if (idx === editing) editing = null;
+        else if (idx < editing) editing = editing - 1;
+      }
+      return { ...state, pages: newPages, editingPageIndex: editing };
+    }
 
     case "REORDER_PAGES": {
       const { from, to } = action;
@@ -88,11 +112,17 @@ function reducer(state: State, action: Action): State {
       const next = state.pages.slice();
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
-      return { ...state, pages: next };
+      let editing = state.editingPageIndex;
+      if (editing !== null) {
+        if (editing === from) editing = to;
+        else if (from < editing && to >= editing) editing = editing - 1;
+        else if (from > editing && to <= editing) editing = editing + 1;
+      }
+      return { ...state, pages: next, editingPageIndex: editing };
     }
 
     case "CLEAR_PAGES":
-      return { ...state, pages: [] };
+      return { ...state, pages: [], editingPageIndex: null };
   }
 }
 
@@ -158,7 +188,9 @@ async function compressJpegToTarget(canvas: HTMLCanvasElement, targetBytes: numb
 }
 
 export function useEditor() {
-  const [state, dispatch] = useReducer(reducer, { src: null, history: [], future: [], pages: [], hydrated: false });
+  const [state, dispatch] = useReducer(reducer, {
+    src: null, history: [], future: [], pages: [], editingPageIndex: null, hydrated: false,
+  });
   const hydratedRef = useRef(false);
 
   useEffect(() => {
@@ -169,8 +201,11 @@ export function useEditor() {
         history: stored?.history ?? [],
         future: stored?.future ?? [],
         pages: stored?.pages ?? [],
+        editingPageIndex: stored?.editingPageIndex ?? null,
       }))
-      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [], future: [], pages: [] }));
+      .catch(() => dispatch({
+        type: "HYDRATE", src: null, history: [], future: [], pages: [], editingPageIndex: null,
+      }));
   }, []);
 
   useEffect(() => {
@@ -187,9 +222,10 @@ export function useEditor() {
         history: state.history,
         future: state.future,
         pages: state.pages,
+        editingPageIndex: state.editingPageIndex,
       }).catch(() => {});
     }
-  }, [state.src, state.history, state.future, state.pages, state.hydrated]);
+  }, [state.src, state.history, state.future, state.pages, state.editingPageIndex, state.hydrated]);
 
   const loadFile = useCallback((file: File) => {
     const reader = new FileReader();

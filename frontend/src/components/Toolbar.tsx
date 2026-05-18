@@ -17,13 +17,14 @@ type Props = {
   onPerspective: () => void;
   onAddPage: () => void;
   pagesCount: number;
+  isEditingPage: boolean;
 };
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
   onApplyCrop, onUndo, onRedo, onReset, onDownload,
   canUndo, canRedo, hasCrop, onPerspective,
-  onAddPage, pagesCount,
+  onAddPage, pagesCount, isEditingPage,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
   const [quality, setQuality] = useState(90);
@@ -93,13 +94,16 @@ export default function Toolbar({
 
         <button
           onClick={onAddPage}
-          title="Dodaj jako stronę PDF"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
-            transition-colors bg-gray-800 hover:bg-gray-700 text-white border border-gray-700"
+          title={isEditingPage ? "Zapisz zmiany w edytowanej stronie" : "Dodaj jako stronę PDF"}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
+            transition-colors text-white border
+            ${isEditingPage
+              ? "bg-amber-600 hover:bg-amber-500 border-amber-500"
+              : "bg-gray-800 hover:bg-gray-700 border-gray-700"}`}
         >
-          <span>➕</span>
-          <span className="hidden md:inline">Strona</span>
-          {pagesCount > 0 && (
+          <span>{isEditingPage ? "💾" : "➕"}</span>
+          <span className="hidden md:inline">{isEditingPage ? "Zapisz" : "Strona"}</span>
+          {pagesCount > 0 && !isEditingPage && (
             <span className="ml-1 px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] leading-none">
               {pagesCount}
             </span>
@@ -210,7 +214,7 @@ export default function Toolbar({
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
             { icon: "↪",  label: "Ponów",   onClick: onRedo, disabled: !canRedo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
-            { icon: "➕", label: "Strona",  onClick: onAddPage, badge: pagesCount },
+            { icon: isEditingPage ? "💾" : "➕", label: isEditingPage ? "Zapisz" : "Strona", onClick: onAddPage, badge: isEditingPage ? 0 : pagesCount, primary: isEditingPage },
             { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(buildOpts()), primary: true },
           ].map(a => (
             <button

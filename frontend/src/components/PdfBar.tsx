@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 
 type Props = {
   pages: string[];
+  editingIndex: number | null;
   margin: number;
   onMarginChange: (mm: number) => void;
   onRemove: (index: number) => void;
   onReorder: (from: number, to: number) => void;
+  onSelect: (index: number) => void;
   onClear: () => void;
   onDownload: () => void;
 };
@@ -21,14 +23,16 @@ const LONG_PRESS_MS = 220;
 const MOVE_THRESHOLD_PX = 8;
 
 export default function PdfBar({
-  pages, margin, onMarginChange,
-  onRemove, onReorder, onClear, onDownload,
+  pages, editingIndex, margin, onMarginChange,
+  onRemove, onReorder, onSelect, onClear, onDownload,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const overIndexRef = useRef<number | null>(null);
   const longPressTimer = useRef<number | null>(null);
+  const movedRef = useRef(false);
+  const longPressFiredRef = useRef(false);
   const onReorderRef = useRef(onReorder);
   useEffect(() => { onReorderRef.current = onReorder; }, [onReorder]);
 
@@ -53,11 +57,15 @@ export default function PdfBar({
         const dx = e.clientX - drag.startX;
         const dy = e.clientY - drag.startY;
         if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
+          movedRef.current = true;
           cancelLongPress();
           setDrag(null);
         }
         return;
       }
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) movedRef.current = true;
       setPointerPos({ x: e.clientX, y: e.clientY });
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const thumb = el?.closest("[data-page-index]") as HTMLElement | null;
@@ -98,14 +106,26 @@ export default function PdfBar({
   const startPress = (e: React.PointerEvent, i: number) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const isTouch = e.pointerType === "touch";
+    movedRef.current = false;
+    longPressFiredRef.current = false;
     setDrag({ sourceIndex: i, startX: e.clientX, startY: e.clientY, active: !isTouch });
     setPointerPos({ x: e.clientX, y: e.clientY });
     if (isTouch) {
       longPressTimer.current = window.setTimeout(() => {
         setDrag(d => d ? { ...d, active: true } : null);
+        longPressFiredRef.current = true;
         longPressTimer.current = null;
       }, LONG_PRESS_MS);
     }
+  };
+
+  const handleClick = (i: number) => {
+    if (movedRef.current || longPressFiredRef.current) {
+      movedRef.current = false;
+      longPressFiredRef.current = false;
+      return;
+    }
+    onSelect(i);
   };
 
   return (
@@ -135,15 +155,22 @@ export default function PdfBar({
         {pages.map((src, i) => {
           const isDragging = drag?.active && drag.sourceIndex === i;
           const isOver = drag?.active && overIndex === i && drag.sourceIndex !== i;
+          const isEditing = editingIndex === i;
           return (
             <div
               key={i}
               data-page-index={i}
               onPointerDown={e => startPress(e, i)}
+              onClick={() => handleClick(i)}
+              title={isEditing
+                ? "Edytujesz tę stronę · zmiany zapisuje '+ Strona'"
+                : "Kliknij, aby edytować · przytrzymaj i przeciągnij, aby zmienić kolejność"}
               className={`relative shrink-0 select-none cursor-grab active:cursor-grabbing
                 transition-transform
+                hover:ring-2 hover:ring-gray-600 rounded
                 ${isDragging ? "opacity-40 scale-95" : ""}
-                ${isOver ? "ring-2 ring-indigo-400 rounded" : ""}`}
+                ${isOver ? "ring-2 ring-indigo-400" : ""}
+                ${isEditing && !isOver ? "ring-2 ring-amber-400" : ""}`}
               style={{ touchAction: "none" }}
             >
               <img
@@ -164,6 +191,11 @@ export default function PdfBar({
               <span className="absolute bottom-0 left-0 px-1 bg-black/60 text-white text-[9px] rounded-tr rounded-bl">
                 {i + 1}
               </span>
+              {isEditing && (
+                <span className="absolute top-0 left-0 px-1 bg-amber-500 text-white text-[9px] rounded-tl rounded-br leading-none py-0.5">
+                  ✏
+                </span>
+              )}
             </div>
           );
         })}

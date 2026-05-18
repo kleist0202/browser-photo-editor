@@ -1,16 +1,19 @@
 import { useRef, useState } from "react";
 
-type Props = { onFile: (file: File) => void };
+type Props = { onFiles: (files: File[]) => void };
 
-export default function DropZone({ onFile }: Props) {
+export default function DropZone({ onFiles }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+
+  const pickImages = (list: FileList | null | undefined) =>
+    list ? Array.from(list).filter(f => f.type.startsWith("image/")) : [];
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) onFile(file);
+    const files = pickImages(e.dataTransfer.files);
+    if (files.length > 0) onFiles(files);
   };
 
   return (
@@ -29,17 +32,20 @@ export default function DropZone({ onFile }: Props) {
     >
       <div className="text-5xl">📷</div>
       <div className="text-center">
-        <p className="text-white font-medium">Przeciągnij zdjęcie lub kliknij</p>
-        <p className="text-gray-500 text-sm mt-1">JPG, PNG, WEBP, RAW</p>
+        <p className="text-white font-medium">Przeciągnij zdjęcia lub kliknij</p>
+        <p className="text-gray-500 text-sm mt-1">
+          JPG, PNG, WEBP, RAW — wiele plików = osobne strony PDF
+        </p>
       </div>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
         onChange={e => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          const files = pickImages(e.target.files);
+          if (files.length > 0) onFiles(files);
           e.target.value = "";
         }}
       />

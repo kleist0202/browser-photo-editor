@@ -48,6 +48,28 @@ export default function App() {
   const canPreviewOriginal = state.history.length > 0;
   const [pdfMargin, setPdfMargin] = useState(8);
 
+  const readAsDataURL = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const result = e.target?.result;
+        if (typeof result === "string") resolve(result);
+        else reject(new Error("read failed"));
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+  const handleFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    if (files.length === 1) {
+      loadFile(files[0]);
+      return;
+    }
+    const dataUrls = await Promise.all(files.map(readAsDataURL));
+    dataUrls.forEach(src => dispatch({ type: "ADD_PAGE", src }));
+  };
+
   const enterPerspMode = () => {
     const img = imgRef.current;
     if (!img) return;
@@ -173,16 +195,22 @@ export default function App() {
           <>
             <PdfBar
               pages={state.pages}
+              editingIndex={state.editingPageIndex}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
+              onSelect={i => {
+                const src = state.pages[i];
+                if (!src) return;
+                dispatch({ type: "LOAD", src, editingPageIndex: i });
+              }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin)}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
-                <DropZone onFile={loadFile} />
+                <DropZone onFiles={handleFiles} />
               </div>
             </div>
           </>
@@ -204,14 +232,21 @@ export default function App() {
               onPerspective={enterPerspMode}
               onAddPage={() => state.src && dispatch({ type: "ADD_PAGE", src: state.src })}
               pagesCount={state.pages.length}
+              isEditingPage={state.editingPageIndex !== null}
             />
 
             <PdfBar
               pages={state.pages}
+              editingIndex={state.editingPageIndex}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
+              onSelect={i => {
+                const src = state.pages[i];
+                if (!src) return;
+                dispatch({ type: "LOAD", src, editingPageIndex: i });
+              }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin)}
             />
