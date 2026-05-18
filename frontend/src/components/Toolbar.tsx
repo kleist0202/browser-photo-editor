@@ -12,12 +12,15 @@ type Props = {
   canUndo: boolean;
   hasCrop: boolean;
   onPerspective: () => void;
+  onAddPage: () => void;
+  pagesCount: number;
 };
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
   onApplyCrop, onUndo, onReset, onDownload,
   canUndo, hasCrop, onPerspective,
+  onAddPage, pagesCount,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
   const [quality, setQuality] = useState(90);
@@ -73,6 +76,23 @@ export default function Toolbar({
 
         {iconBtn("↩", "Cofnij", onUndo, { disabled: !canUndo })}
         {iconBtn("✕", "Reset",  onReset, { variant: "danger" })}
+
+        <div className="w-px h-6 bg-gray-700" />
+
+        <button
+          onClick={onAddPage}
+          title="Dodaj jako stronę PDF"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
+            transition-colors bg-gray-800 hover:bg-gray-700 text-white border border-gray-700"
+        >
+          <span>➕</span>
+          <span className="hidden md:inline">Strona</span>
+          {pagesCount > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] leading-none">
+              {pagesCount}
+            </span>
+          )}
+        </button>
 
         {/* Pobierz z opcjami */}
         <div className="relative ml-auto">
@@ -141,7 +161,7 @@ export default function Toolbar({
         bg-gray-900/95 backdrop-blur border-t border-gray-800
         pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="grid grid-cols-4 grid-rows-2">
+        <div className="grid grid-cols-5">
           {[
             { icon: "↺",  label: "Lewo",    onClick: onRotateCCW },
             { icon: "↻",  label: "Prawo",   onClick: onRotateCW },
@@ -151,18 +171,24 @@ export default function Toolbar({
             { icon: "✂",  label: "Przytnij", onClick: onApplyCrop, disabled: !hasCrop, primary: true },
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
+            { icon: "➕", label: "Strona",  onClick: onAddPage, badge: pagesCount },
             { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(format, quality), primary: true },
           ].map(a => (
             <button
               key={a.label}
               onClick={a.onClick}
               disabled={a.disabled}
-              className={`flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs
+              className={`relative flex flex-col items-center justify-center gap-0.5 py-2.5 text-xs
                 font-medium transition-colors disabled:opacity-40 active:scale-95
                 ${a.primary ? "text-indigo-400" : a.danger ? "text-red-400" : "text-gray-300"}`}
             >
               <span className="text-xl leading-none">{a.icon}</span>
               <span className="text-[10px] text-gray-500">{a.label}</span>
+              {a.badge ? (
+                <span className="absolute top-1 right-1/4 px-1 rounded bg-indigo-600 text-white text-[9px] leading-none py-0.5">
+                  {a.badge}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

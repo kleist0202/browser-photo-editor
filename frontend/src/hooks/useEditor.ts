@@ -1,44 +1,59 @@
 import { useReducer, useCallback, useEffect, useRef } from "react";
 import type { PixelCrop } from "react-image-crop";
+import jsPDF from "jspdf";
 import { warpPerspective, type Point } from "../utils/homography";
 import { saveState, loadState, clearState } from "../utils/storage";
 
 type State = {
   src: string | null;
   history: string[];
+  pages: string[];
   hydrated: boolean;
 };
 
 type Action =
-  | { type: "HYDRATE"; src: string | null; history: string[] }
+  | { type: "HYDRATE"; src: string | null; history: string[]; pages: string[] }
   | { type: "LOAD"; src: string }
   | { type: "COMMIT"; result: string }
   | { type: "UNDO" }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  | { type: "ADD_PAGE"; src: string }
+  | { type: "REMOVE_PAGE"; index: number }
+  | { type: "CLEAR_PAGES" };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "HYDRATE":
-      return { src: action.src, history: action.history, hydrated: true };
+      return { src: action.src, history: action.history, pages: action.pages, hydrated: true };
 
     case "LOAD":
-      return { src: action.src, history: [], hydrated: true };
+      return { src: action.src, history: [], pages: state.pages, hydrated: true };
 
     case "COMMIT":
       return {
         src: action.result,
         history: state.src ? [...state.history, state.src] : state.history,
+        pages: state.pages,
         hydrated: true,
       };
 
     case "UNDO": {
       const prev = state.history[state.history.length - 1];
       if (!prev) return state;
-      return { src: prev, history: state.history.slice(0, -1), hydrated: true };
+      return { src: prev, history: state.history.slice(0, -1), pages: state.pages, hydrated: true };
     }
 
     case "RESET":
-      return { src: null, history: [], hydrated: true };
+      return { src: null, history: [], pages: state.pages, hydrated: true };
+
+    case "ADD_PAGE":
+      return { ...state, pages: [...state.pages, action.src] };
+
+    case "REMOVE_PAGE":
+      return { ...state, pages: state.pages.filter((_, i) => i !== action.index) };
+
+    case "CLEAR_PAGES":
+      return { ...state, pages: [] };
   }
 }
 
@@ -66,13 +81,18 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 export function useEditor() {
-  const [state, dispatch] = useReducer(reducer, { src: null, history: [], hydrated: false });
+  const [state, dispatch] = useReducer(reducer, { src: null, history: [], pages: [], hydrated: false });
   const hydratedRef = useRef(false);
 
   useEffect(() => {
     loadState()
-      .then(stored => dispatch({ type: "HYDRATE", src: stored?.src ?? null, history: stored?.history ?? [] }))
-      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [] }));
+      .then(stored => dispatch({
+        type: "HYDRATE",
+        src: stored?.src ?? null,
+        history: stored?.history ?? [],
+        pages: stored?.pages ?? [],
+      }))
+      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [], pages: [] }));
   }, []);
 
   useEffect(() => {
@@ -81,12 +101,12 @@ export function useEditor() {
       hydratedRef.current = true;
       return;
     }
-    if (state.src === null && state.history.length === 0) {
+    if (state.src === null && state.history.length === 0 && state.pages.length === 0) {
       clearState().catch(() => {});
     } else {
-      saveState({ src: state.src, history: state.history }).catch(() => {});
+      saveState({ src: state.src, history: state.history, pages: state.pages }).catch(() => {});
     }
-  }, [state.src, state.history, state.hydrated]);
+  }, [state.src, state.history, state.pages, state.hydrated]);
 
   const loadFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -221,5 +241,37 @@ export function useEditor() {
     img.src = src;
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download };
+  const downloadPdf = useCallback(async (pages: string[], marginMm = 8) => {
+    if (pages.length === 0) return;
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = (marginMm * 72) / 25.4;
+    const maxW = pageW - 2 * margin;
+    const maxH = pageH - 2 * margin;
+
+    for (let i = 0; i < pages.length; i++) {
+      if (i > 0) doc.addPage();
+      const img = await loadImage(pages[i]);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, img.width, img.height);
+      ctx.drawImage(img, 0, 0);
+      const jpegUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+      const ratio = Math.min(maxW / img.width, maxH / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      const x = (pageW - w) / 2;
+      const y = (pageH - h) / 2;
+      doc.addImage(jpegUrl, "JPEG", x, y, w, h);
+    }
+
+    doc.save("scan.pdf");
+  }, []);
+
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download, downloadPdf };
 }

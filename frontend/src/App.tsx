@@ -9,6 +9,7 @@ import AspectRatioBar from "./components/AspectRatioBar";
 import FiltersBar from "./components/FiltersBar";
 import ScanBar from "./components/ScanBar";
 import PerspectiveOverlay from "./components/PerspectiveOverlay";
+import PdfBar from "./components/PdfBar";
 import { useEditor } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
 
@@ -29,7 +30,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download, downloadPdf } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -45,6 +46,7 @@ export default function App() {
   const [showOriginal, setShowOriginal] = useState(false);
   const originalSrc = state.history[0] ?? state.src;
   const canPreviewOriginal = state.history.length > 0;
+  const [pdfMargin, setPdfMargin] = useState(8);
 
   const enterPerspMode = () => {
     const img = imgRef.current;
@@ -115,11 +117,21 @@ export default function App() {
         {!state.hydrated ? (
           <div className="flex-1" />
         ) : !state.src ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-full max-w-lg">
-              <DropZone onFile={loadFile} />
+          <>
+            <PdfBar
+              pages={state.pages}
+              margin={pdfMargin}
+              onMarginChange={setPdfMargin}
+              onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
+              onClear={() => dispatch({ type: "CLEAR_PAGES" })}
+              onDownload={() => downloadPdf(state.pages, pdfMargin)}
+            />
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-full max-w-lg">
+                <DropZone onFile={loadFile} />
+              </div>
             </div>
-          </div>
+          </>
         ) : (
           <>
             <Toolbar
@@ -134,6 +146,17 @@ export default function App() {
               canUndo={state.history.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
               onPerspective={enterPerspMode}
+              onAddPage={() => state.src && dispatch({ type: "ADD_PAGE", src: state.src })}
+              pagesCount={state.pages.length}
+            />
+
+            <PdfBar
+              pages={state.pages}
+              margin={pdfMargin}
+              onMarginChange={setPdfMargin}
+              onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
+              onClear={() => dispatch({ type: "CLEAR_PAGES" })}
+              onDownload={() => downloadPdf(state.pages, pdfMargin)}
             />
 
             {/* Proporcje, filtry, skan */}
