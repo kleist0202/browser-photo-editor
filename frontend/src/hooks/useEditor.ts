@@ -107,6 +107,44 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+export type DownloadOpts = {
+  format: "jpeg" | "png";
+  quality: number; // 1-100
+  targetSizeKB?: number; // tylko dla JPEG
+};
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error("toBlob failed")), type, quality);
+  });
+}
+
+async function compressJpegToTarget(canvas: HTMLCanvasElement, targetBytes: number): Promise<Blob> {
+  let working = canvas;
+  for (let downscale = 0; downscale < 6; downscale++) {
+    const minBlob = await canvasToBlob(working, "image/jpeg", 0.05);
+    if (minBlob.size <= targetBytes) {
+      let lo = 0.05, hi = 0.95, best: Blob = minBlob;
+      for (let i = 0; i < 8; i++) {
+        const q = (lo + hi) / 2;
+        const blob = await canvasToBlob(working, "image/jpeg", q);
+        if (blob.size <= targetBytes) { best = blob; lo = q; }
+        else { hi = q; }
+      }
+      return best;
+    }
+    const next = document.createElement("canvas");
+    next.width = Math.max(1, Math.round(working.width * 0.8));
+    next.height = Math.max(1, Math.round(working.height * 0.8));
+    const ctx = next.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, next.width, next.height);
+    ctx.drawImage(working, 0, 0, next.width, next.height);
+    working = next;
+  }
+  return canvasToBlob(working, "image/jpeg", 0.05);
+}
+
 export function useEditor() {
   const [state, dispatch] = useReducer(reducer, { src: null, history: [], future: [], pages: [], hydrated: false });
   const hydratedRef = useRef(false);
@@ -252,26 +290,32 @@ export function useEditor() {
     return canvas.toDataURL("image/png");
   }, []);
 
-  const download = useCallback((src: string, format: "jpeg" | "png", quality: number) => {
-    // Konwertuj do wybranego formatu przy pobieraniu
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d")!;
-      if (format === "jpeg") {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      ctx.drawImage(img, 0, 0);
-      const dataUrl = canvas.toDataURL(`image/${format}`, quality / 100);
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `edited.${format === "jpeg" ? "jpg" : "png"}`;
-      a.click();
-    };
-    img.src = src;
+  const download = useCallback(async (src: string, opts: DownloadOpts) => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    if (opts.format === "jpeg") {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, img.width, img.height);
+    }
+    ctx.drawImage(img, 0, 0);
+
+    let blob: Blob;
+    if (opts.format === "jpeg" && opts.targetSizeKB && opts.targetSizeKB > 0) {
+      blob = await compressJpegToTarget(canvas, opts.targetSizeKB * 1024);
+    } else {
+      blob = await canvasToBlob(canvas, `image/${opts.format}`,
+        opts.format === "jpeg" ? opts.quality / 100 : undefined);
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `edited.${opts.format === "jpeg" ? "jpg" : "png"}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, []);
 
   const downloadPdf = useCallback(async (pages: string[], marginMm = 8) => {

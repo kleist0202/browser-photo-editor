@@ -83,6 +83,59 @@ export default function App() {
     }
   };
 
+  const cropNaturalSize = (() => {
+    const img = imgRef.current;
+    if (!crop || !img || !img.naturalWidth) return { w: 0, h: 0 };
+    if (crop.unit === "%") {
+      return {
+        w: Math.round((crop.width / 100) * img.naturalWidth),
+        h: Math.round((crop.height / 100) * img.naturalHeight),
+      };
+    }
+    const sx = img.naturalWidth / img.width;
+    const sy = img.naturalHeight / img.height;
+    return { w: Math.round(crop.width * sx), h: Math.round(crop.height * sy) };
+  })();
+
+  const applyCropSize = (newW: number, newH: number) => {
+    const img = imgRef.current;
+    if (!img) return;
+    const clampedW = Math.max(1, Math.min(newW, img.naturalWidth));
+    const clampedH = Math.max(1, Math.min(newH, img.naturalHeight));
+
+    let xPct = 0, yPct = 0;
+    if (crop) {
+      if (crop.unit === "%") { xPct = crop.x; yPct = crop.y; }
+      else {
+        xPct = (crop.x / img.width) * 100;
+        yPct = (crop.y / img.height) * 100;
+      }
+    }
+    const wPct = (clampedW / img.naturalWidth) * 100;
+    const hPct = (clampedH / img.naturalHeight) * 100;
+    xPct = Math.max(0, Math.min(xPct, 100 - wPct));
+    yPct = Math.max(0, Math.min(yPct, 100 - hPct));
+
+    const newCrop: Crop = { unit: "%", x: xPct, y: yPct, width: wPct, height: hPct };
+    setCrop(newCrop);
+    setCompletedCrop({
+      unit: "px",
+      x: (xPct / 100) * img.width,
+      y: (yPct / 100) * img.height,
+      width: (wPct / 100) * img.width,
+      height: (hPct / 100) * img.height,
+    });
+  };
+
+  const handleCropWChange = (w: number) => {
+    const h = aspect ? Math.round(w / aspect) : cropNaturalSize.h;
+    applyCropSize(w, h);
+  };
+  const handleCropHChange = (h: number) => {
+    const w = aspect ? Math.round(h * aspect) : cropNaturalSize.w;
+    applyCropSize(w, h);
+  };
+
   const handleApplyCrop = async () => {
     if (!state.src || !completedCrop || !imgRef.current) return;
     const img = imgRef.current;
@@ -143,7 +196,7 @@ export default function App() {
               onUndo={() => dispatch({ type: "UNDO" })}
               onRedo={() => dispatch({ type: "REDO" })}
               onReset={() => dispatch({ type: "RESET" })}
-              onDownload={(fmt, q) => state.src && download(state.src, fmt, q)}
+              onDownload={opts => state.src && download(state.src, opts)}
               canUndo={state.history.length > 0}
               canRedo={state.future.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
@@ -163,7 +216,17 @@ export default function App() {
 
             {/* Proporcje, filtry, skan */}
             <div className="hidden sm:block space-y-2">
-              <AspectRatioBar aspect={aspect} originalAspect={originalAspect} onChange={handleAspectChange} />
+              <AspectRatioBar
+                aspect={aspect}
+                originalAspect={originalAspect}
+                onChange={handleAspectChange}
+                cropW={cropNaturalSize.w}
+                cropH={cropNaturalSize.h}
+                maxW={imgRef.current?.naturalWidth ?? 0}
+                maxH={imgRef.current?.naturalHeight ?? 0}
+                onCropWChange={handleCropWChange}
+                onCropHChange={handleCropHChange}
+              />
               <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
               <FiltersBar
                 brightness={brightness}
@@ -261,7 +324,17 @@ export default function App() {
 
             {/* Proporcje i skan na mobile — nad paskiem dolnym */}
             <div className="sm:hidden space-y-2">
-              <AspectRatioBar aspect={aspect} originalAspect={originalAspect} onChange={handleAspectChange} />
+              <AspectRatioBar
+                aspect={aspect}
+                originalAspect={originalAspect}
+                onChange={handleAspectChange}
+                cropW={cropNaturalSize.w}
+                cropH={cropNaturalSize.h}
+                maxW={imgRef.current?.naturalWidth ?? 0}
+                maxH={imgRef.current?.naturalHeight ?? 0}
+                onCropWChange={handleCropWChange}
+                onCropHChange={handleCropHChange}
+              />
               <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
             </div>
 

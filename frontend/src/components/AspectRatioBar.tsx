@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const RATIOS = [
   { label: "Swobodny",   value: undefined },
   { label: "1:1",        value: 1 },
@@ -10,9 +12,46 @@ type Props = {
   aspect: number | undefined;
   originalAspect: number | undefined;
   onChange: (v: number | undefined) => void;
+  cropW: number;
+  cropH: number;
+  maxW: number;
+  maxH: number;
+  onCropWChange: (w: number) => void;
+  onCropHChange: (h: number) => void;
 };
 
-export default function AspectRatioBar({ aspect, originalAspect, onChange }: Props) {
+function PxInput({ value, max, onCommit }: {
+  value: number;
+  max: number;
+  onCommit: (n: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  return (
+    <input
+      type="number"
+      min={1}
+      max={max}
+      value={text}
+      onChange={e => {
+        setText(e.target.value);
+        const n = parseInt(e.target.value, 10);
+        if (!isNaN(n) && n > 0) onCommit(n);
+      }}
+      onBlur={() => setText(String(value))}
+      className="w-16 bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-700
+        focus:outline-none focus:border-indigo-500 [appearance:textfield]
+        [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
+  );
+}
+
+export default function AspectRatioBar({
+  aspect, originalAspect, onChange,
+  cropW, cropH, maxW, maxH, onCropWChange, onCropHChange,
+}: Props) {
+  const hasImage = maxW > 0 && maxH > 0;
+
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className="text-gray-500 text-xs mr-1">Proporcje:</span>
@@ -42,6 +81,15 @@ export default function AspectRatioBar({ aspect, originalAspect, onChange }: Pro
         >
           Oryginał
         </button>
+      )}
+
+      {hasImage && (
+        <div className="flex items-center gap-1 ml-2 pl-2 border-l border-gray-800">
+          <PxInput value={cropW} max={maxW} onCommit={onCropWChange} />
+          <span className="text-gray-500 text-xs">×</span>
+          <PxInput value={cropH} max={maxH} onCommit={onCropHChange} />
+          <span className="text-gray-500 text-xs ml-0.5">px</span>
+        </div>
       )}
     </div>
   );

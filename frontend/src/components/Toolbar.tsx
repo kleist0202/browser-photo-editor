@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { DownloadOpts } from "../hooks/useEditor";
 
 type Props = {
   onRotateCW: () => void;
@@ -9,7 +10,7 @@ type Props = {
   onUndo: () => void;
   onRedo: () => void;
   onReset: () => void;
-  onDownload: (format: "jpeg" | "png", quality: number) => void;
+  onDownload: (opts: DownloadOpts) => void;
   canUndo: boolean;
   canRedo: boolean;
   hasCrop: boolean;
@@ -27,6 +28,14 @@ export default function Toolbar({
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
   const [quality, setQuality] = useState(90);
   const [showDownload, setShowDownload] = useState(false);
+  const [useTargetSize, setUseTargetSize] = useState(false);
+  const [targetSize, setTargetSize] = useState(500);
+
+  const buildOpts = (): DownloadOpts => ({
+    format,
+    quality,
+    targetSizeKB: useTargetSize && format === "jpeg" ? targetSize : undefined,
+  });
 
   const iconBtn = (icon: string, label: string, onClick: () => void, opts?: {
     disabled?: boolean;
@@ -129,7 +138,7 @@ export default function Toolbar({
                 </div>
               </div>
 
-              {format === "jpeg" && (
+              {format === "jpeg" && !useTargetSize && (
                 <div className="space-y-1.5">
                   <div className="flex justify-between">
                     <p className="text-gray-400 text-xs uppercase tracking-widest">Jakość</p>
@@ -148,8 +157,34 @@ export default function Toolbar({
                 </div>
               )}
 
+              {format === "jpeg" && (
+                <div className="space-y-1.5 border-t border-gray-700 pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useTargetSize}
+                      onChange={e => setUseTargetSize(e.target.checked)}
+                      className="accent-indigo-500"
+                    />
+                    <span className="text-gray-400 text-xs uppercase tracking-widest">Docelowy rozmiar</span>
+                  </label>
+                  {useTargetSize && (
+                    <div className="flex items-center gap-2 pl-6">
+                      <input
+                        type="number"
+                        min={10} max={20000} step={10}
+                        value={targetSize}
+                        onChange={e => setTargetSize(Number(e.target.value))}
+                        className="w-full bg-gray-700 text-white text-sm px-2 py-1 rounded"
+                      />
+                      <span className="text-gray-500 text-xs">KB</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
-                onClick={() => { onDownload(format, quality); setShowDownload(false); }}
+                onClick={() => { onDownload(buildOpts()); setShowDownload(false); }}
                 className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
               >
                 Pobierz {format.toUpperCase()}
@@ -176,7 +211,7 @@ export default function Toolbar({
             { icon: "↪",  label: "Ponów",   onClick: onRedo, disabled: !canRedo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
             { icon: "➕", label: "Strona",  onClick: onAddPage, badge: pagesCount },
-            { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(format, quality), primary: true },
+            { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(buildOpts()), primary: true },
           ].map(a => (
             <button
               key={a.label}
