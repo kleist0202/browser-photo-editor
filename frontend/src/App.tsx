@@ -113,7 +113,7 @@ export default function App() {
       </header>
 
       {/* ── Główna treść ────────────────────────────────────────── */}
-      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-44 sm:pb-6" : ""}`}>
+      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-56 sm:pb-6" : ""}`}>
         {!state.hydrated ? (
           <div className="flex-1" />
         ) : !state.src ? (
@@ -141,9 +141,11 @@ export default function App() {
               onFlipV={() => commit(() => applyFlip(state.src!, "v"))}
               onApplyCrop={handleApplyCrop}
               onUndo={() => dispatch({ type: "UNDO" })}
+              onRedo={() => dispatch({ type: "REDO" })}
               onReset={() => dispatch({ type: "RESET" })}
               onDownload={(fmt, q) => state.src && download(state.src, fmt, q)}
               canUndo={state.history.length > 0}
+              canRedo={state.future.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
               onPerspective={enterPerspMode}
               onAddPage={() => state.src && dispatch({ type: "ADD_PAGE", src: state.src })}

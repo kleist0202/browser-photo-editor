@@ -2,7 +2,7 @@ const DB_NAME = "photo-editor";
 const STORE = "state";
 const KEY = "current";
 
-export type StoredState = { src: string | null; history: string[]; pages: string[] };
+export type StoredState = { src: string | null; history: string[]; future: string[]; pages: string[] };
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

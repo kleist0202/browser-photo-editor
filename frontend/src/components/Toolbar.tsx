@@ -7,9 +7,11 @@ type Props = {
   onFlipV: () => void;
   onApplyCrop: () => void;
   onUndo: () => void;
+  onRedo: () => void;
   onReset: () => void;
   onDownload: (format: "jpeg" | "png", quality: number) => void;
   canUndo: boolean;
+  canRedo: boolean;
   hasCrop: boolean;
   onPerspective: () => void;
   onAddPage: () => void;
@@ -18,8 +20,8 @@ type Props = {
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
-  onApplyCrop, onUndo, onReset, onDownload,
-  canUndo, hasCrop, onPerspective,
+  onApplyCrop, onUndo, onRedo, onReset, onDownload,
+  canUndo, canRedo, hasCrop, onPerspective,
   onAddPage, pagesCount,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
@@ -75,6 +77,7 @@ export default function Toolbar({
         <div className="w-px h-6 bg-gray-700" />
 
         {iconBtn("↩", "Cofnij", onUndo, { disabled: !canUndo })}
+        {iconBtn("↪", "Ponów",  onRedo, { disabled: !canRedo })}
         {iconBtn("✕", "Reset",  onReset, { variant: "danger" })}
 
         <div className="w-px h-6 bg-gray-700" />
@@ -161,7 +164,7 @@ export default function Toolbar({
         bg-gray-900/95 backdrop-blur border-t border-gray-800
         pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-4">
           {[
             { icon: "↺",  label: "Lewo",    onClick: onRotateCCW },
             { icon: "↻",  label: "Prawo",   onClick: onRotateCW },
@@ -170,6 +173,7 @@ export default function Toolbar({
             { icon: "⬡",  label: "Perspekt.", onClick: onPerspective },
             { icon: "✂",  label: "Przytnij", onClick: onApplyCrop, disabled: !hasCrop, primary: true },
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
+            { icon: "↪",  label: "Ponów",   onClick: onRedo, disabled: !canRedo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
             { icon: "➕", label: "Strona",  onClick: onAddPage, badge: pagesCount },
             { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(format, quality), primary: true },

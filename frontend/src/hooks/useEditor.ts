@@ -7,15 +7,17 @@ import { saveState, loadState, clearState } from "../utils/storage";
 type State = {
   src: string | null;
   history: string[];
+  future: string[];
   pages: string[];
   hydrated: boolean;
 };
 
 type Action =
-  | { type: "HYDRATE"; src: string | null; history: string[]; pages: string[] }
+  | { type: "HYDRATE"; src: string | null; history: string[]; future: string[]; pages: string[] }
   | { type: "LOAD"; src: string }
   | { type: "COMMIT"; result: string }
   | { type: "UNDO" }
+  | { type: "REDO" }
   | { type: "RESET" }
   | { type: "ADD_PAGE"; src: string }
   | { type: "REMOVE_PAGE"; index: number }
@@ -24,27 +26,52 @@ type Action =
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "HYDRATE":
-      return { src: action.src, history: action.history, pages: action.pages, hydrated: true };
+      return {
+        src: action.src,
+        history: action.history,
+        future: action.future,
+        pages: action.pages,
+        hydrated: true,
+      };
 
     case "LOAD":
-      return { src: action.src, history: [], pages: state.pages, hydrated: true };
+      return { src: action.src, history: [], future: [], pages: state.pages, hydrated: true };
 
     case "COMMIT":
       return {
         src: action.result,
         history: state.src ? [...state.history, state.src] : state.history,
+        future: [],
         pages: state.pages,
         hydrated: true,
       };
 
     case "UNDO": {
       const prev = state.history[state.history.length - 1];
-      if (!prev) return state;
-      return { src: prev, history: state.history.slice(0, -1), pages: state.pages, hydrated: true };
+      if (!prev || !state.src) return state;
+      return {
+        src: prev,
+        history: state.history.slice(0, -1),
+        future: [state.src, ...state.future],
+        pages: state.pages,
+        hydrated: true,
+      };
+    }
+
+    case "REDO": {
+      const [next, ...rest] = state.future;
+      if (!next) return state;
+      return {
+        src: next,
+        history: state.src ? [...state.history, state.src] : state.history,
+        future: rest,
+        pages: state.pages,
+        hydrated: true,
+      };
     }
 
     case "RESET":
-      return { src: null, history: [], pages: state.pages, hydrated: true };
+      return { src: null, history: [], future: [], pages: state.pages, hydrated: true };
 
     case "ADD_PAGE":
       return { ...state, pages: [...state.pages, action.src] };
@@ -81,7 +108,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 export function useEditor() {
-  const [state, dispatch] = useReducer(reducer, { src: null, history: [], pages: [], hydrated: false });
+  const [state, dispatch] = useReducer(reducer, { src: null, history: [], future: [], pages: [], hydrated: false });
   const hydratedRef = useRef(false);
 
   useEffect(() => {
@@ -90,9 +117,10 @@ export function useEditor() {
         type: "HYDRATE",
         src: stored?.src ?? null,
         history: stored?.history ?? [],
+        future: stored?.future ?? [],
         pages: stored?.pages ?? [],
       }))
-      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [], pages: [] }));
+      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [], future: [], pages: [] }));
   }, []);
 
   useEffect(() => {
@@ -101,12 +129,17 @@ export function useEditor() {
       hydratedRef.current = true;
       return;
     }
-    if (state.src === null && state.history.length === 0 && state.pages.length === 0) {
+    if (state.src === null && state.history.length === 0 && state.future.length === 0 && state.pages.length === 0) {
       clearState().catch(() => {});
     } else {
-      saveState({ src: state.src, history: state.history, pages: state.pages }).catch(() => {});
+      saveState({
+        src: state.src,
+        history: state.history,
+        future: state.future,
+        pages: state.pages,
+      }).catch(() => {});
     }
-  }, [state.src, state.history, state.pages, state.hydrated]);
+  }, [state.src, state.history, state.future, state.pages, state.hydrated]);
 
   const loadFile = useCallback((file: File) => {
     const reader = new FileReader();
