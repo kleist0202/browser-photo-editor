@@ -42,6 +42,9 @@ export default function App() {
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
   const [busy, setBusy] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const originalSrc = state.history[0] ?? state.src;
+  const canPreviewOriginal = state.history.length > 0;
 
   const enterPerspMode = () => {
     const img = imgRef.current;
@@ -176,38 +179,65 @@ export default function App() {
                   />
                 </div>
               ) : (
-                <ReactCrop
-                  crop={crop}
-                  onChange={c => setCrop(c)}
-                  onComplete={c => setCompletedCrop(c)}
-                  aspect={aspect}
-                  minWidth={10}
-                  minHeight={10}
-                >
-                  <img
-                    ref={imgRef}
-                    src={state.src}
-                    alt="edytowane zdjęcie"
-                    style={{
-                      maxHeight: "min(65vh, calc(100svh - 280px))",
-                      maxWidth: "100%",
-                      display: "block",
-                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
-                    }}
-                    className="rounded-lg mx-auto"
-                    onLoad={e => {
-                      const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
-                      setOriginalAspect(w / h);
-                      setCrop(initCrop(w, h, aspect));
-                    }}
-                  />
-                </ReactCrop>
+                <div className="relative inline-block">
+                  <ReactCrop
+                    crop={crop}
+                    onChange={c => setCrop(c)}
+                    onComplete={c => setCompletedCrop(c)}
+                    aspect={aspect}
+                    minWidth={10}
+                    minHeight={10}
+                  >
+                    <img
+                      ref={imgRef}
+                      src={state.src}
+                      alt="edytowane zdjęcie"
+                      style={{
+                        maxHeight: "min(65vh, calc(100svh - 280px))",
+                        maxWidth: "100%",
+                        display: "block",
+                        filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                      }}
+                      className="rounded-lg mx-auto"
+                      onLoad={e => {
+                        const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                        setOriginalAspect(w / h);
+                        setCrop(initCrop(w, h, aspect));
+                      }}
+                    />
+                  </ReactCrop>
+                  {showOriginal && originalSrc && (
+                    <img
+                      src={originalSrc}
+                      alt="oryginał"
+                      className="absolute inset-0 w-full h-full object-contain rounded-lg pointer-events-none"
+                    />
+                  )}
+                  {canPreviewOriginal && (
+                    <button
+                      onMouseDown={() => setShowOriginal(true)}
+                      onMouseUp={() => setShowOriginal(false)}
+                      onMouseLeave={() => setShowOriginal(false)}
+                      onTouchStart={e => { e.preventDefault(); setShowOriginal(true); }}
+                      onTouchEnd={() => setShowOriginal(false)}
+                      onTouchCancel={() => setShowOriginal(false)}
+                      onContextMenu={e => e.preventDefault()}
+                      title="Przytrzymaj, aby zobaczyć oryginał"
+                      className="absolute top-2 right-2 z-10 px-3 py-1.5 rounded-lg text-xs font-medium
+                        bg-gray-900/80 backdrop-blur text-gray-200 border border-gray-700 select-none
+                        hover:bg-gray-800/90 active:bg-indigo-600 active:text-white touch-none"
+                    >
+                      {showOriginal ? "Oryginał" : "👁 Oryginał"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Proporcje na mobile — nad paskiem dolnym */}
-            <div className="sm:hidden">
+            {/* Proporcje i skan na mobile — nad paskiem dolnym */}
+            <div className="sm:hidden space-y-2">
               <AspectRatioBar aspect={aspect} originalAspect={originalAspect} onChange={handleAspectChange} />
+              <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
             </div>
 
             <p className="text-center text-gray-700 text-xs hidden sm:block">
