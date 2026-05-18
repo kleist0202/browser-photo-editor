@@ -47,6 +47,21 @@ export default function App() {
   const originalSrc = state.history[0] ?? state.src;
   const canPreviewOriginal = state.history.length > 0;
   const [pdfMargin, setPdfMargin] = useState(8);
+  const [lupaActive, setLupaActive] = useState(false);
+  const [lupaPos, setLupaPos] = useState<{ x: number; y: number; touch: boolean } | null>(null);
+  const LUPA_SIZE = 140;
+  const LUPA_ZOOM = 2.5;
+  const LUPA_TOUCH_GAP = 30;
+
+  const handleLupaMove = (e: React.PointerEvent) => {
+    if (!imgRef.current) return;
+    const rect = imgRef.current.getBoundingClientRect();
+    setLupaPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      touch: e.pointerType === "touch",
+    });
+  };
 
   const readAsDataURL = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -95,13 +110,27 @@ export default function App() {
     setBusy(false);
   };
 
+  const setCropAndCompleted = (pctCrop: Crop, img: HTMLImageElement) => {
+    setCrop(pctCrop);
+    if (pctCrop.unit === "%") {
+      setCompletedCrop({
+        unit: "px",
+        x: (pctCrop.x / 100) * img.width,
+        y: (pctCrop.y / 100) * img.height,
+        width: (pctCrop.width / 100) * img.width,
+        height: (pctCrop.height / 100) * img.height,
+      });
+    }
+  };
+
   const handleAspectChange = (v: number | undefined) => {
     setAspect(v);
-    setCrop(undefined);
-    setCompletedCrop(undefined);
     if (imgRef.current) {
-      const { naturalWidth: w, naturalHeight: h } = imgRef.current;
-      setCrop(initCrop(w, h, v));
+      const img = imgRef.current;
+      setCropAndCompleted(initCrop(img.naturalWidth, img.naturalHeight, v), img);
+    } else {
+      setCrop(undefined);
+      setCompletedCrop(undefined);
     }
   };
 
@@ -325,9 +354,9 @@ export default function App() {
                       }}
                       className="rounded-lg mx-auto"
                       onLoad={e => {
-                        const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
-                        setOriginalAspect(w / h);
-                        setCrop(initCrop(w, h, aspect));
+                        const img = e.currentTarget;
+                        setOriginalAspect(img.naturalWidth / img.naturalHeight);
+                        setCropAndCompleted(initCrop(img.naturalWidth, img.naturalHeight, aspect), img);
                       }}
                     />
                   </ReactCrop>
@@ -338,6 +367,60 @@ export default function App() {
                       className="absolute inset-0 w-full h-full object-contain rounded-lg pointer-events-none"
                     />
                   )}
+
+                  {lupaActive && (
+                    <>
+                      <div
+                        className="absolute inset-0 z-10 cursor-crosshair rounded-lg"
+                        onPointerDown={handleLupaMove}
+                        onPointerMove={handleLupaMove}
+                        onPointerUp={() => setLupaPos(null)}
+                        onPointerLeave={() => setLupaPos(null)}
+                        onPointerCancel={() => setLupaPos(null)}
+                        style={{ touchAction: "none" }}
+                      />
+                      {lupaPos && state.src && imgRef.current && (() => {
+                        const offsetY = lupaPos.touch
+                          ? (lupaPos.y > LUPA_SIZE / 2 + LUPA_TOUCH_GAP
+                              ? -(LUPA_SIZE / 2 + LUPA_TOUCH_GAP)
+                              : LUPA_SIZE / 2 + LUPA_TOUCH_GAP)
+                          : 0;
+                        return (
+                          <div
+                            style={{
+                              position: "absolute",
+                              left: lupaPos.x - LUPA_SIZE / 2,
+                              top: lupaPos.y - LUPA_SIZE / 2 + offsetY,
+                              width: LUPA_SIZE,
+                              height: LUPA_SIZE,
+                              borderRadius: "50%",
+                              border: "3px solid white",
+                              boxShadow: "0 0 12px rgba(0,0,0,0.6)",
+                              backgroundImage: `url("${state.src}")`,
+                              backgroundRepeat: "no-repeat",
+                              backgroundSize: `${imgRef.current.clientWidth * LUPA_ZOOM}px ${imgRef.current.clientHeight * LUPA_ZOOM}px`,
+                              backgroundPosition: `${LUPA_SIZE / 2 - lupaPos.x * LUPA_ZOOM}px ${LUPA_SIZE / 2 - lupaPos.y * LUPA_ZOOM}px`,
+                              pointerEvents: "none",
+                              zIndex: 30,
+                            }}
+                          />
+                        );
+                      })()}
+                    </>
+                  )}
+
+                  <button
+                    onClick={() => { setLupaActive(v => !v); setLupaPos(null); }}
+                    title={lupaActive ? "Wyłącz lupę" : "Włącz lupę"}
+                    className={`absolute top-2 left-2 z-20 px-2.5 py-1.5 rounded-lg text-xs font-medium
+                      backdrop-blur border select-none transition-colors
+                      ${lupaActive
+                        ? "bg-indigo-600 text-white border-indigo-500"
+                        : "bg-gray-900/80 text-gray-200 border-gray-700 hover:bg-gray-800/90"}`}
+                  >
+                    🔍
+                  </button>
+
                   {canPreviewOriginal && (
                     <button
                       onMouseDown={() => setShowOriginal(true)}
@@ -348,7 +431,7 @@ export default function App() {
                       onTouchCancel={() => setShowOriginal(false)}
                       onContextMenu={e => e.preventDefault()}
                       title="Przytrzymaj, aby zobaczyć oryginał"
-                      className="absolute top-2 right-2 z-10 px-3 py-1.5 rounded-lg text-xs font-medium
+                      className="absolute top-2 right-2 z-20 px-3 py-1.5 rounded-lg text-xs font-medium
                         bg-gray-900/80 backdrop-blur text-gray-200 border border-gray-700 select-none
                         hover:bg-gray-800/90 active:bg-indigo-600 active:text-white touch-none"
                     >
