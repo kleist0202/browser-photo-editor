@@ -11,12 +11,13 @@ type Props = {
   onDownload: (format: "jpeg" | "png", quality: number) => void;
   canUndo: boolean;
   hasCrop: boolean;
+  onPerspective: () => void;
 };
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
   onApplyCrop, onUndo, onReset, onDownload,
-  canUndo, hasCrop,
+  canUndo, hasCrop, onPerspective,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
   const [quality, setQuality] = useState(90);
@@ -59,6 +60,10 @@ export default function Toolbar({
           {iconBtn("↔", "Flip H", onFlipH)}
           {iconBtn("↕", "Flip V", onFlipV)}
         </div>
+
+        <div className="w-px h-6 bg-gray-700" />
+
+        {iconBtn("⬡", "Perspektywa", onPerspective)}
 
         <div className="w-px h-6 bg-gray-700" />
 
@@ -142,7 +147,8 @@ export default function Toolbar({
             { icon: "↻",  label: "Prawo",   onClick: onRotateCW },
             { icon: "↔",  label: "Flip H",  onClick: onFlipH },
             { icon: "↕",  label: "Flip V",  onClick: onFlipV },
-            { icon: "✂",  label: "Przytnij",onClick: onApplyCrop, disabled: !hasCrop, primary: true },
+            { icon: "⬡",  label: "Perspekt.", onClick: onPerspective },
+            { icon: "✂",  label: "Przytnij", onClick: onApplyCrop, disabled: !hasCrop, primary: true },
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
             { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(format, quality), primary: true },

@@ -1,5 +1,6 @@
 import { useReducer, useCallback } from "react";
 import type { PixelCrop } from "react-image-crop";
+import { warpPerspective, type Point } from "../utils/homography";
 
 type State = {
   src: string | null;
@@ -107,6 +108,70 @@ export function useEditor() {
     return canvas.toDataURL("image/png");
   }, []);
 
+  const applyPerspective = useCallback(async (
+    src: string,
+    displayPoints: Point[],
+    displaySize: { w: number; h: number },
+  ): Promise<string> => {
+    const img = await loadImage(src);
+    const scaleX = img.width  / displaySize.w;
+    const scaleY = img.height / displaySize.h;
+    const naturalPoints = displayPoints.map(p => ({
+      x: p.x * scaleX,
+      y: p.y * scaleY,
+    }));
+    return warpPerspective(img, naturalPoints);
+  }, []);
+
+  const applyScan = useCallback(async (
+    src: string,
+    mode: "bw" | "gray" | "enhanced",
+  ): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+
+    if (mode === "gray") {
+      ctx.filter = "grayscale(1) contrast(1.3) brightness(1.05)";
+      ctx.drawImage(img, 0, 0);
+    } else if (mode === "enhanced") {
+      ctx.filter = "grayscale(1) contrast(1.8) brightness(1.15)";
+      ctx.drawImage(img, 0, 0);
+    } else {
+      // bw — próg binarny: każdy piksel albo biały albo czarny
+      ctx.filter = "grayscale(1)";
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = data[i]; // po grayscale R=G=B
+        const val = avg > 140 ? 255 : 0;
+        data[i] = data[i + 1] = data[i + 2] = val;
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    return canvas.toDataURL("image/png");
+  }, []);
+
+  const applyFilters = useCallback(async (
+    src: string,
+    brightness: number,
+    contrast: number,
+    saturation: number,
+  ): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`;
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const download = useCallback((src: string, format: "jpeg" | "png", quality: number) => {
     // Konwertuj do wybranego formatu przy pobieraniu
     const img = new Image();
@@ -129,5 +194,5 @@ export function useEditor() {
     img.src = src;
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, download };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download };
 }

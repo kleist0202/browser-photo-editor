@@ -6,7 +6,11 @@ import ReactCrop, {
 import DropZone from "./components/DropZone";
 import Toolbar from "./components/Toolbar";
 import AspectRatioBar from "./components/AspectRatioBar";
+import FiltersBar from "./components/FiltersBar";
+import ScanBar from "./components/ScanBar";
+import PerspectiveOverlay from "./components/PerspectiveOverlay";
 import { useEditor } from "./hooks/useEditor";
+import type { Point } from "./utils/homography";
 
 function initCrop(width: number, height: number, aspect?: number): Crop {
   const ratio = aspect ?? width / height;
@@ -25,13 +29,35 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, download } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
   const [originalAspect, setOriginalAspect] = useState<number | undefined>(undefined);
+  const [brightness, setBrightness] = useState(100);
+  const [contrast, setContrast] = useState(100);
+  const [saturation, setSaturation] = useState(100);
+  const [perspMode, setPerspMode] = useState(false);
+  const [perspPoints, setPerspPoints] = useState<Point[]>([]);
+  const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
   const [busy, setBusy] = useState(false);
+
+  const enterPerspMode = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    const w = img.clientWidth;
+    const h = img.clientHeight;
+    const pad = 0.12;
+    setDisplaySize({ w, h });
+    setPerspPoints([
+      { x: w * pad,       y: h * pad },
+      { x: w * (1 - pad), y: h * pad },
+      { x: w * (1 - pad), y: h * (1 - pad) },
+      { x: w * pad,       y: h * (1 - pad) },
+    ]);
+    setPerspMode(true);
+  };
 
   const commit = async (fn: () => Promise<string>) => {
     setBusy(true);
@@ -82,7 +108,7 @@ export default function App() {
       </header>
 
       {/* ── Główna treść ────────────────────────────────────────── */}
-      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-28 sm:pb-6" : ""}`}>
+      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-44 sm:pb-6" : ""}`}>
         {!state.src ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="w-full max-w-lg">
@@ -102,11 +128,22 @@ export default function App() {
               onDownload={(fmt, q) => state.src && download(state.src, fmt, q)}
               canUndo={state.history.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
+              onPerspective={enterPerspMode}
             />
 
-            {/* Proporcje kadru */}
-            <div className="hidden sm:block">
+            {/* Proporcje, filtry, skan */}
+            <div className="hidden sm:block space-y-2">
               <AspectRatioBar aspect={aspect} originalAspect={originalAspect} onChange={handleAspectChange} />
+              <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
+              <FiltersBar
+                brightness={brightness}
+                contrast={contrast}
+                saturation={saturation}
+                onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
+                onApply={() => commit(() => applyFilters(state.src!, brightness, contrast, saturation))
+                  .then(() => { setBrightness(100); setContrast(100); setSaturation(100); })}
+                onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
+              />
             </div>
 
             {busy && (
@@ -117,28 +154,53 @@ export default function App() {
 
             {/* Zdjęcie */}
             <div className="bg-gray-900 rounded-2xl border border-gray-800 p-2 sm:p-4 text-center">
-              <ReactCrop
-                crop={crop}
-                onChange={c => setCrop(c)}
-                onComplete={c => setCompletedCrop(c)}
-                aspect={aspect}
-                minWidth={10}
-                minHeight={10}
-              >
-                <img
-                  ref={imgRef}
-                  src={state.src}
-                  alt="edytowane zdjęcie"
-                  style={{ maxHeight: "65vh", maxWidth: "100%", display: "block" }}
-                  className="rounded-lg mx-auto"
-                  onLoad={e => {
-                    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
-                    const orig = w / h;
-                    setOriginalAspect(orig);
-                    setCrop(initCrop(w, h, aspect));
-                  }}
-                />
-              </ReactCrop>
+              {perspMode ? (
+                <div className="relative inline-block">
+                  <img
+                    src={state.src!}
+                    alt="korekcja perspektywy"
+                    style={{ maxHeight: "min(65vh, calc(100svh - 280px))", maxWidth: "100%", display: "block" }}
+                    className="rounded-lg"
+                  />
+                  <PerspectiveOverlay
+                    points={perspPoints}
+                    displaySize={displaySize}
+                    onChange={setPerspPoints}
+                    onCancel={() => setPerspMode(false)}
+                    onApply={async () => {
+                      setPerspMode(false);
+                      await commit(() => applyPerspective(state.src!, perspPoints, displaySize));
+                    }}
+                  />
+                </div>
+              ) : (
+                <ReactCrop
+                  crop={crop}
+                  onChange={c => setCrop(c)}
+                  onComplete={c => setCompletedCrop(c)}
+                  aspect={aspect}
+                  minWidth={10}
+                  minHeight={10}
+                >
+                  <img
+                    ref={imgRef}
+                    src={state.src}
+                    alt="edytowane zdjęcie"
+                    style={{
+                      maxHeight: "min(65vh, calc(100svh - 280px))",
+                      maxWidth: "100%",
+                      display: "block",
+                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                    }}
+                    className="rounded-lg mx-auto"
+                    onLoad={e => {
+                      const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                      setOriginalAspect(w / h);
+                      setCrop(initCrop(w, h, aspect));
+                    }}
+                  />
+                </ReactCrop>
+              )}
             </div>
 
             {/* Proporcje na mobile — nad paskiem dolnym */}
