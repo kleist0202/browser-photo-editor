@@ -1,13 +1,16 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useCallback, useEffect, useRef } from "react";
 import type { PixelCrop } from "react-image-crop";
 import { warpPerspective, type Point } from "../utils/homography";
+import { saveState, loadState, clearState } from "../utils/storage";
 
 type State = {
   src: string | null;
   history: string[];
+  hydrated: boolean;
 };
 
 type Action =
+  | { type: "HYDRATE"; src: string | null; history: string[] }
   | { type: "LOAD"; src: string }
   | { type: "COMMIT"; result: string }
   | { type: "UNDO" }
@@ -15,23 +18,27 @@ type Action =
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
+    case "HYDRATE":
+      return { src: action.src, history: action.history, hydrated: true };
+
     case "LOAD":
-      return { src: action.src, history: [] };
+      return { src: action.src, history: [], hydrated: true };
 
     case "COMMIT":
       return {
         src: action.result,
         history: state.src ? [...state.history, state.src] : state.history,
+        hydrated: true,
       };
 
     case "UNDO": {
       const prev = state.history[state.history.length - 1];
       if (!prev) return state;
-      return { src: prev, history: state.history.slice(0, -1) };
+      return { src: prev, history: state.history.slice(0, -1), hydrated: true };
     }
 
     case "RESET":
-      return { src: null, history: [] };
+      return { src: null, history: [], hydrated: true };
   }
 }
 
@@ -59,7 +66,27 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 export function useEditor() {
-  const [state, dispatch] = useReducer(reducer, { src: null, history: [] });
+  const [state, dispatch] = useReducer(reducer, { src: null, history: [], hydrated: false });
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    loadState()
+      .then(stored => dispatch({ type: "HYDRATE", src: stored?.src ?? null, history: stored?.history ?? [] }))
+      .catch(() => dispatch({ type: "HYDRATE", src: null, history: [] }));
+  }, []);
+
+  useEffect(() => {
+    if (!state.hydrated) return;
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      return;
+    }
+    if (state.src === null && state.history.length === 0) {
+      clearState().catch(() => {});
+    } else {
+      saveState({ src: state.src, history: state.history }).catch(() => {});
+    }
+  }, [state.src, state.history, state.hydrated]);
 
   const loadFile = useCallback((file: File) => {
     const reader = new FileReader();

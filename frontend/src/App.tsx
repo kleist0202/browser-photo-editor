@@ -109,7 +109,9 @@ export default function App() {
 
       {/* ── Główna treść ────────────────────────────────────────── */}
       <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-44 sm:pb-6" : ""}`}>
-        {!state.src ? (
+        {!state.hydrated ? (
+          <div className="flex-1" />
+        ) : !state.src ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="w-full max-w-lg">
               <DropZone onFile={loadFile} />
