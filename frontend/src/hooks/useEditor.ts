@@ -369,6 +369,98 @@ export function useEditor() {
     return canvas.toDataURL("image/png");
   }, []);
 
+  const applyAutoEnhance = useCallback(async (src: string): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const histR = new Uint32Array(256);
+    const histG = new Uint32Array(256);
+    const histB = new Uint32Array(256);
+    for (let i = 0; i < data.length; i += 4) {
+      histR[data[i]]++;
+      histG[data[i + 1]]++;
+      histB[data[i + 2]]++;
+    }
+
+    const total = data.length / 4;
+    const findPct = (hist: Uint32Array, pct: number): number => {
+      const target = total * pct;
+      let cum = 0;
+      for (let v = 0; v < 256; v++) {
+        cum += hist[v];
+        if (cum >= target) return v;
+      }
+      return 255;
+    };
+
+    const LO = 0.005, HI = 0.995;
+    const makeLut = (lo: number, hi: number): Uint8Array => {
+      const lut = new Uint8Array(256);
+      if (hi <= lo) {
+        for (let v = 0; v < 256; v++) lut[v] = v;
+        return lut;
+      }
+      const scale = 255 / (hi - lo);
+      for (let v = 0; v < 256; v++) {
+        if (v <= lo) lut[v] = 0;
+        else if (v >= hi) lut[v] = 255;
+        else lut[v] = Math.round((v - lo) * scale);
+      }
+      return lut;
+    };
+
+    const lutR = makeLut(findPct(histR, LO), findPct(histR, HI));
+    const lutG = makeLut(findPct(histG, LO), findPct(histG, HI));
+    const lutB = makeLut(findPct(histB, LO), findPct(histB, HI));
+
+    for (let i = 0; i < data.length; i += 4) {
+      data[i]     = lutR[data[i]];
+      data[i + 1] = lutG[data[i + 1]];
+      data[i + 2] = lutB[data[i + 2]];
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas.toDataURL("image/png");
+  }, []);
+
+  const applySharpen = useCallback(async (src: string): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const w = canvas.width;
+    const h = canvas.height;
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const s = imageData.data;
+    const dst = new Uint8ClampedArray(s.length);
+    const stride = w * 4;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = (y * w + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          let sum = 5 * s[p + c];
+          if (x > 0)      sum -= s[p - 4 + c];
+          if (x < w - 1)  sum -= s[p + 4 + c];
+          if (y > 0)      sum -= s[p - stride + c];
+          if (y < h - 1)  sum -= s[p + stride + c];
+          dst[p + c] = sum;
+        }
+        dst[p + 3] = s[p + 3];
+      }
+    }
+
+    ctx.putImageData(new ImageData(dst, w, h), 0, 0);
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const applyBlur = useCallback(async (
     src: string,
     displayRegions: { x: number; y: number; w: number; h: number }[],
@@ -486,5 +578,5 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, download, downloadPdf };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, download, downloadPdf };
 }

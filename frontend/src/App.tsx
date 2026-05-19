@@ -31,7 +31,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, download, downloadPdf } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, download, downloadPdf } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -45,6 +45,8 @@ export default function App() {
   const [blurMode, setBlurMode] = useState(false);
   const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([]);
   const [blurBlockSize, setBlurBlockSize] = useState(15);
+  const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
+  const [autoEnhancedSrcs, setAutoEnhancedSrcs] = useState<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement>(null);
   const [busy, setBusy] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -152,6 +154,25 @@ export default function App() {
     }
     setBusy(false);
   };
+
+  const handleAutoEnhance = () => {
+    commit(async src => {
+      const result = await applyAutoEnhance(src);
+      setAutoEnhancedSrcs(prev => new Set(prev).add(result));
+      return result;
+    });
+  };
+
+  const handleSharpen = () => {
+    commit(async src => {
+      const result = await applySharpen(src);
+      setSharpenedSrcs(prev => new Set(prev).add(result));
+      return result;
+    });
+  };
+
+  const isAutoActive = !!state.src && autoEnhancedSrcs.has(state.src);
+  const isSharpenActive = !!state.src && sharpenedSrcs.has(state.src);
 
   const ensureFilterBaked = async (): Promise<string | null> => {
     if (!state.src) return null;
@@ -425,6 +446,10 @@ export default function App() {
                 saturation={saturation}
                 onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
                 onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
+                onAutoEnhance={handleAutoEnhance}
+                onSharpen={handleSharpen}
+                isAutoActive={isAutoActive}
+                isSharpenActive={isSharpenActive}
               />
             </div>
 
@@ -602,6 +627,17 @@ export default function App() {
                 onCropHChange={handleCropHChange}
               />
               <ScanBar onApply={mode => commit(src => applyScan(src, mode))} />
+              <FiltersBar
+                brightness={brightness}
+                contrast={contrast}
+                saturation={saturation}
+                onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
+                onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
+                onAutoEnhance={handleAutoEnhance}
+                onSharpen={handleSharpen}
+                isAutoActive={isAutoActive}
+                isSharpenActive={isSharpenActive}
+              />
             </div>
 
             <p className="text-center text-gray-700 text-xs hidden sm:block">
