@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 type Props = {
   pages: string[];
   editingIndex: number | null;
+  currentSrc: string | null;
   margin: number;
   onMarginChange: (mm: number) => void;
   onRemove: (index: number) => void;
@@ -23,7 +24,7 @@ const LONG_PRESS_MS = 220;
 const MOVE_THRESHOLD_PX = 8;
 
 export default function PdfBar({
-  pages, editingIndex, margin, onMarginChange,
+  pages, editingIndex, currentSrc, margin, onMarginChange,
   onRemove, onReorder, onSelect, onClear, onDownload,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -132,7 +133,7 @@ export default function PdfBar({
     <>
     {drag?.active && pointerPos && (
       <img
-        src={pages[drag.sourceIndex]}
+        src={drag.sourceIndex === editingIndex && currentSrc ? currentSrc : pages[drag.sourceIndex]}
         alt=""
         className="fixed pointer-events-none rounded border-2 border-indigo-400 shadow-2xl"
         style={{
@@ -174,7 +175,7 @@ export default function PdfBar({
               style={{ touchAction: "none" }}
             >
               <img
-                src={src}
+                src={isEditing && currentSrc ? currentSrc : src}
                 alt={`strona ${i + 1}`}
                 draggable={false}
                 className="h-12 w-12 object-cover rounded border border-gray-700 pointer-events-none"

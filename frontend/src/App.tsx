@@ -75,9 +75,16 @@ export default function App() {
       reader.readAsDataURL(file);
     });
 
+  const resetFilters = () => {
+    setBrightness(100);
+    setContrast(100);
+    setSaturation(100);
+  };
+
   const handleFiles = async (files: File[]) => {
     if (files.length === 0) return;
     if (files.length === 1) {
+      resetFilters();
       loadFile(files[0]);
       return;
     }
@@ -101,13 +108,36 @@ export default function App() {
     setPerspMode(true);
   };
 
-  const commit = async (fn: () => Promise<string>) => {
+  const commit = async (fn: (src: string) => Promise<string>) => {
+    if (!state.src) return;
     setBusy(true);
-    const result = await fn();
+    const isFiltered = brightness !== 100 || contrast !== 100 || saturation !== 100;
+    const baseSrc = isFiltered
+      ? await applyFilters(state.src, brightness, contrast, saturation)
+      : state.src;
+    const result = await fn(baseSrc);
     dispatch({ type: "COMMIT", result });
     setCrop(undefined);
     setCompletedCrop(undefined);
+    if (isFiltered) {
+      setBrightness(100);
+      setContrast(100);
+      setSaturation(100);
+    }
     setBusy(false);
+  };
+
+  const ensureFilterBaked = async (): Promise<string | null> => {
+    if (!state.src) return null;
+    if (brightness === 100 && contrast === 100 && saturation === 100) return state.src;
+    setBusy(true);
+    const baked = await applyFilters(state.src, brightness, contrast, saturation);
+    dispatch({ type: "COMMIT", result: baked });
+    setBrightness(100);
+    setContrast(100);
+    setSaturation(100);
+    setBusy(false);
+    return baked;
   };
 
   const setCropAndCompleted = (pctCrop: Crop, img: HTMLImageElement) => {
@@ -199,7 +229,7 @@ export default function App() {
       width:  Math.round(completedCrop.width  * scaleX),
       height: Math.round(completedCrop.height * scaleY),
     };
-    await commit(() => applyCrop(state.src!, scaled));
+    await commit(src => applyCrop(src, scaled));
   };
 
   return (
@@ -223,19 +253,16 @@ export default function App() {
         ) : !state.src ? (
           <>
             <PdfBar
-              pages={state.pages}
+              pages={state.pages.map(p => p.src)}
               editingIndex={state.editingPageIndex}
+              currentSrc={state.src}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
-              onSelect={i => {
-                const src = state.pages[i];
-                if (!src) return;
-                dispatch({ type: "LOAD", src, editingPageIndex: i });
-              }}
+              onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages, pdfMargin)}
+              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin)}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
@@ -246,38 +273,41 @@ export default function App() {
         ) : (
           <>
             <Toolbar
-              onRotateCW={() => commit(() => applyRotation(state.src!, 90))}
-              onRotateCCW={() => commit(() => applyRotation(state.src!, 270))}
-              onFlipH={() => commit(() => applyFlip(state.src!, "h"))}
-              onFlipV={() => commit(() => applyFlip(state.src!, "v"))}
+              onRotateCW={() => commit(src => applyRotation(src, 90))}
+              onRotateCCW={() => commit(src => applyRotation(src, 270))}
+              onFlipH={() => commit(src => applyFlip(src, "h"))}
+              onFlipV={() => commit(src => applyFlip(src, "v"))}
               onApplyCrop={handleApplyCrop}
               onUndo={() => dispatch({ type: "UNDO" })}
               onRedo={() => dispatch({ type: "REDO" })}
-              onReset={() => dispatch({ type: "RESET" })}
-              onDownload={opts => state.src && download(state.src, opts)}
+              onReset={() => { resetFilters(); dispatch({ type: "RESET" }); }}
+              onDownload={async opts => {
+                const src = await ensureFilterBaked();
+                if (src) await download(src, opts);
+              }}
               canUndo={state.history.length > 0}
               canRedo={state.future.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
               onPerspective={enterPerspMode}
-              onAddPage={() => state.src && dispatch({ type: "ADD_PAGE", src: state.src })}
+              onAddPage={async () => {
+                const src = await ensureFilterBaked();
+                if (src) dispatch({ type: "ADD_PAGE", src });
+              }}
               pagesCount={state.pages.length}
               isEditingPage={state.editingPageIndex !== null}
             />
 
             <PdfBar
-              pages={state.pages}
+              pages={state.pages.map(p => p.src)}
               editingIndex={state.editingPageIndex}
+              currentSrc={state.src}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
-              onSelect={i => {
-                const src = state.pages[i];
-                if (!src) return;
-                dispatch({ type: "LOAD", src, editingPageIndex: i });
-              }}
+              onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages, pdfMargin)}
+              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin)}
             />
 
             {/* Proporcje, filtry, skan */}
@@ -293,14 +323,12 @@ export default function App() {
                 onCropWChange={handleCropWChange}
                 onCropHChange={handleCropHChange}
               />
-              <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
+              <ScanBar onApply={mode => commit(src => applyScan(src, mode))} />
               <FiltersBar
                 brightness={brightness}
                 contrast={contrast}
                 saturation={saturation}
                 onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
-                onApply={() => commit(() => applyFilters(state.src!, brightness, contrast, saturation))
-                  .then(() => { setBrightness(100); setContrast(100); setSaturation(100); })}
                 onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
               />
             </div>
@@ -328,7 +356,7 @@ export default function App() {
                     onCancel={() => setPerspMode(false)}
                     onApply={async () => {
                       setPerspMode(false);
-                      await commit(() => applyPerspective(state.src!, perspPoints, displaySize));
+                      await commit(src => applyPerspective(src, perspPoints, displaySize));
                     }}
                   />
                 </div>
@@ -455,7 +483,7 @@ export default function App() {
                 onCropWChange={handleCropWChange}
                 onCropHChange={handleCropHChange}
               />
-              <ScanBar onApply={mode => commit(() => applyScan(state.src!, mode))} />
+              <ScanBar onApply={mode => commit(src => applyScan(src, mode))} />
             </div>
 
             <p className="text-center text-gray-700 text-xs hidden sm:block">

@@ -2,11 +2,13 @@ const DB_NAME = "photo-editor";
 const STORE = "state";
 const KEY = "current";
 
+export type StoredPage = { src: string; history: string[]; future: string[] };
+
 export type StoredState = {
   src: string | null;
   history: string[];
   future: string[];
-  pages: string[];
+  pages: StoredPage[];
   editingPageIndex: number | null;
 };
 

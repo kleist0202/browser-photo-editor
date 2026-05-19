@@ -4,18 +4,21 @@ import jsPDF from "jspdf";
 import { warpPerspective, type Point } from "../utils/homography";
 import { saveState, loadState, clearState } from "../utils/storage";
 
+export type Page = { src: string; history: string[]; future: string[] };
+
 type State = {
   src: string | null;
   history: string[];
   future: string[];
-  pages: string[];
+  pages: Page[];
   editingPageIndex: number | null;
   hydrated: boolean;
 };
 
 type Action =
-  | { type: "HYDRATE"; src: string | null; history: string[]; future: string[]; pages: string[]; editingPageIndex: number | null }
-  | { type: "LOAD"; src: string; editingPageIndex?: number | null }
+  | { type: "HYDRATE"; src: string | null; history: string[]; future: string[]; pages: Page[]; editingPageIndex: number | null }
+  | { type: "LOAD"; src: string }
+  | { type: "LOAD_PAGE"; index: number }
   | { type: "COMMIT"; result: string }
   | { type: "UNDO" }
   | { type: "REDO" }
@@ -24,6 +27,18 @@ type Action =
   | { type: "REMOVE_PAGE"; index: number }
   | { type: "REORDER_PAGES"; from: number; to: number }
   | { type: "CLEAR_PAGES" };
+
+function syncCurrentToPages(state: State): Page[] {
+  if (state.editingPageIndex === null || !state.src) return state.pages;
+  if (state.editingPageIndex < 0 || state.editingPageIndex >= state.pages.length) return state.pages;
+  const next = state.pages.slice();
+  next[state.editingPageIndex] = {
+    src: state.src,
+    history: state.history,
+    future: state.future,
+  };
+  return next;
+}
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -37,15 +52,34 @@ function reducer(state: State, action: Action): State {
         hydrated: true,
       };
 
-    case "LOAD":
+    case "LOAD": {
+      // Save current edit state to the page being edited (if any) before loading a fresh src
+      const pagesAfterSync = syncCurrentToPages(state);
       return {
+        ...state,
         src: action.src,
         history: [],
         future: [],
-        pages: state.pages,
-        editingPageIndex: action.editingPageIndex ?? null,
+        pages: pagesAfterSync,
+        editingPageIndex: null,
         hydrated: true,
       };
+    }
+
+    case "LOAD_PAGE": {
+      const pagesAfterSync = syncCurrentToPages(state);
+      const target = pagesAfterSync[action.index];
+      if (!target) return state;
+      return {
+        ...state,
+        src: target.src,
+        history: target.history,
+        future: target.future,
+        pages: pagesAfterSync,
+        editingPageIndex: action.index,
+        hydrated: true,
+      };
+    }
 
     case "COMMIT":
       return {
@@ -84,13 +118,18 @@ function reducer(state: State, action: Action): State {
       return { ...state, src: null, history: [], future: [], editingPageIndex: null, hydrated: true };
 
     case "ADD_PAGE": {
+      const pageData: Page = {
+        src: action.src,
+        history: state.history,
+        future: state.future,
+      };
       const editing = state.editingPageIndex;
       if (editing !== null && editing >= 0 && editing < state.pages.length) {
         const next = state.pages.slice();
-        next[editing] = action.src;
+        next[editing] = pageData;
         return { ...state, pages: next };
       }
-      return { ...state, pages: [...state.pages, action.src] };
+      return { ...state, pages: [...state.pages, pageData] };
     }
 
     case "REMOVE_PAGE": {
@@ -195,14 +234,22 @@ export function useEditor() {
 
   useEffect(() => {
     loadState()
-      .then(stored => dispatch({
-        type: "HYDRATE",
-        src: stored?.src ?? null,
-        history: stored?.history ?? [],
-        future: stored?.future ?? [],
-        pages: stored?.pages ?? [],
-        editingPageIndex: stored?.editingPageIndex ?? null,
-      }))
+      .then(stored => {
+        const rawPages = stored?.pages ?? [];
+        const pages: Page[] = rawPages.map((p: unknown) =>
+          typeof p === "string"
+            ? { src: p, history: [], future: [] }
+            : { src: (p as Page).src, history: (p as Page).history ?? [], future: (p as Page).future ?? [] }
+        );
+        dispatch({
+          type: "HYDRATE",
+          src: stored?.src ?? null,
+          history: stored?.history ?? [],
+          future: stored?.future ?? [],
+          pages,
+          editingPageIndex: stored?.editingPageIndex ?? null,
+        });
+      })
       .catch(() => dispatch({
         type: "HYDRATE", src: null, history: [], future: [], pages: [], editingPageIndex: null,
       }));

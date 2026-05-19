@@ -3,7 +3,6 @@ type Props = {
   contrast: number;
   saturation: number;
   onChange: (brightness: number, contrast: number, saturation: number) => void;
-  onApply: () => void;
   onReset: () => void;
 };
 
@@ -33,33 +32,22 @@ function Slider({ label, value, onChange }: SliderProps) {
   );
 }
 
-export default function FiltersBar({ brightness, contrast, saturation, onChange, onApply, onReset }: Props) {
+export default function FiltersBar({ brightness, contrast, saturation, onChange, onReset }: Props) {
   const isDirty = brightness !== 100 || contrast !== 100 || saturation !== 100;
 
   return (
     <div className="px-3 py-3 bg-gray-900 rounded-2xl border border-gray-800 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-gray-500 text-xs uppercase tracking-widest">Korekta</span>
-        <div className="flex gap-2">
-          <button
-            onClick={onReset}
-            disabled={!isDirty}
-            className="px-3 py-1 rounded-lg text-xs font-medium transition-colors
-              bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white
-              border border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Reset
-          </button>
-          <button
-            onClick={onApply}
-            disabled={!isDirty}
-            className="px-3 py-1 rounded-lg text-xs font-medium transition-colors
-              bg-indigo-600 hover:bg-indigo-500 text-white
-              disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Zastosuj
-          </button>
-        </div>
+        <button
+          onClick={onReset}
+          disabled={!isDirty}
+          className="px-3 py-1 rounded-lg text-xs font-medium transition-colors
+            bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white
+            border border-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Reset
+        </button>
       </div>
 
       <Slider label="Jasność"   value={brightness} onChange={v => onChange(v, contrast, saturation)} />
