@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import ReactCrop, {
   type Crop, type PixelCrop,
   centerCrop, makeAspectCrop,
@@ -257,6 +257,74 @@ export default function App() {
     };
     await commit(src => applyCrop(src, scaled));
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+
+      if (mod && k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        if (state.history.length > 0) dispatch({ type: "UNDO" });
+        return;
+      }
+      if (mod && ((k === "z" && e.shiftKey) || k === "y")) {
+        e.preventDefault();
+        if (state.future.length > 0) dispatch({ type: "REDO" });
+        return;
+      }
+      if (mod) return;
+      if (!state.src) return;
+
+      if (k === "escape") {
+        if (perspMode) setPerspMode(false);
+        else if (blurMode) { setBlurMode(false); setBlurRegions([]); }
+        else if (lupaActive) { setLupaActive(false); setLupaPos(null); }
+        e.preventDefault();
+        return;
+      }
+      if (k === "enter") {
+        if (perspMode) {
+          setPerspMode(false);
+          commit(src => applyPerspective(src, perspPoints, displaySize));
+        } else if (blurMode) {
+          applyBlurAction();
+        } else if (completedCrop && completedCrop.width > 0) {
+          handleApplyCrop();
+        }
+        e.preventDefault();
+        return;
+      }
+      if (perspMode || blurMode) return;
+
+      if (k === "r") {
+        commit(src => applyRotation(src, e.shiftKey ? 270 : 90));
+        e.preventDefault();
+        return;
+      }
+      if (k === "h") {
+        commit(src => applyFlip(src, "h"));
+        e.preventDefault();
+        return;
+      }
+      if (k === "v") {
+        commit(src => applyFlip(src, "v"));
+        e.preventDefault();
+        return;
+      }
+      if (k === "l") {
+        setLupaActive(v => !v);
+        setLupaPos(null);
+        e.preventDefault();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
