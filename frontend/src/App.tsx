@@ -9,6 +9,7 @@ import AspectRatioBar from "./components/AspectRatioBar";
 import FiltersBar from "./components/FiltersBar";
 import ScanBar from "./components/ScanBar";
 import PerspectiveOverlay from "./components/PerspectiveOverlay";
+import BlurOverlay, { type BlurRegion } from "./components/BlurOverlay";
 import PdfBar from "./components/PdfBar";
 import { useEditor } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
@@ -30,7 +31,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download, downloadPdf } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, download, downloadPdf } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -41,6 +42,9 @@ export default function App() {
   const [perspMode, setPerspMode] = useState(false);
   const [perspPoints, setPerspPoints] = useState<Point[]>([]);
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
+  const [blurMode, setBlurMode] = useState(false);
+  const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([]);
+  const [blurBlockSize, setBlurBlockSize] = useState(15);
   const imgRef = useRef<HTMLImageElement>(null);
   const [busy, setBusy] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
@@ -106,6 +110,28 @@ export default function App() {
       { x: w * pad,       y: h * (1 - pad) },
     ]);
     setPerspMode(true);
+  };
+
+  const enterBlurMode = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    setDisplaySize({ w: img.clientWidth, h: img.clientHeight });
+    setBlurRegions([]);
+    setBlurMode(true);
+  };
+
+  const applyBlurAction = async () => {
+    if (!state.src || blurRegions.length === 0) {
+      setBlurMode(false);
+      setBlurRegions([]);
+      return;
+    }
+    const regions = blurRegions;
+    const size = displaySize;
+    const block = blurBlockSize;
+    setBlurMode(false);
+    setBlurRegions([]);
+    await commit(src => applyBlur(src, regions, size, block));
   };
 
   const commit = async (fn: (src: string) => Promise<string>) => {
@@ -289,6 +315,7 @@ export default function App() {
               canRedo={state.future.length > 0}
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
               onPerspective={enterPerspMode}
+              onBlur={enterBlurMode}
               onAddPage={async () => {
                 const src = await ensureFilterBaked();
                 if (src) dispatch({ type: "ADD_PAGE", src });
@@ -358,6 +385,29 @@ export default function App() {
                       setPerspMode(false);
                       await commit(src => applyPerspective(src, perspPoints, displaySize));
                     }}
+                  />
+                </div>
+              ) : blurMode ? (
+                <div className="relative inline-block">
+                  <img
+                    src={state.src!}
+                    alt="zamazywanie"
+                    style={{
+                      maxHeight: "min(65vh, calc(100svh - 280px))",
+                      maxWidth: "100%",
+                      display: "block",
+                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                    }}
+                    className="rounded-lg"
+                  />
+                  <BlurOverlay
+                    regions={blurRegions}
+                    onChange={setBlurRegions}
+                    blockSize={blurBlockSize}
+                    onBlockSizeChange={setBlurBlockSize}
+                    displaySize={displaySize}
+                    onCancel={() => { setBlurMode(false); setBlurRegions([]); }}
+                    onApply={applyBlurAction}
                   />
                 </div>
               ) : (

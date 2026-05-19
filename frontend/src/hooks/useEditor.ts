@@ -369,6 +369,47 @@ export function useEditor() {
     return canvas.toDataURL("image/png");
   }, []);
 
+  const applyBlur = useCallback(async (
+    src: string,
+    displayRegions: { x: number; y: number; w: number; h: number }[],
+    displaySize: { w: number; h: number },
+    blockSize: number,
+  ): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+
+    const scaleX = img.width / displaySize.w;
+    const scaleY = img.height / displaySize.h;
+    const naturalBlock = Math.max(1, Math.round(blockSize * Math.max(scaleX, scaleY)));
+
+    for (const dr of displayRegions) {
+      const x = Math.max(0, Math.round(dr.x * scaleX));
+      const y = Math.max(0, Math.round(dr.y * scaleY));
+      const w = Math.min(canvas.width - x, Math.round(dr.w * scaleX));
+      const h = Math.min(canvas.height - y, Math.round(dr.h * scaleY));
+      if (w < 1 || h < 1) continue;
+
+      const tw = Math.max(1, Math.round(w / naturalBlock));
+      const th = Math.max(1, Math.round(h / naturalBlock));
+
+      const temp = document.createElement("canvas");
+      temp.width = tw;
+      temp.height = th;
+      const tctx = temp.getContext("2d")!;
+      tctx.imageSmoothingEnabled = false;
+      tctx.drawImage(canvas, x, y, w, h, 0, 0, tw, th);
+
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(temp, 0, 0, tw, th, x, y, w, h);
+    }
+
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const applyFilters = useCallback(async (
     src: string,
     brightness: number,
@@ -445,5 +486,5 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, download, downloadPdf };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, download, downloadPdf };
 }
