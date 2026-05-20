@@ -18,15 +18,13 @@ type Props = {
   onBlur: () => void;
   onAnnotate: () => void;
   onAddPage: () => void;
-  pagesCount: number;
-  isEditingPage: boolean;
 };
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
   onApplyCrop, onUndo, onRedo, onReset, onDownload,
   canUndo, canRedo, hasCrop, onPerspective, onBlur, onAnnotate,
-  onAddPage, pagesCount, isEditingPage,
+  onAddPage,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
   const [quality, setQuality] = useState(90);
@@ -98,20 +96,12 @@ export default function Toolbar({
 
         <button
           onClick={onAddPage}
-          title={isEditingPage ? "Zapisz zmiany w edytowanej stronie" : "Dodaj jako stronę PDF"}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
-            transition-colors text-white border
-            ${isEditingPage
-              ? "bg-amber-600 hover:bg-amber-500 border-amber-500"
-              : "bg-gray-800 hover:bg-gray-700 border-gray-700"}`}
+          title="Dodaj nowe zdjęcie"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
+            transition-colors bg-gray-800 hover:bg-gray-700 text-white border border-gray-700"
         >
-          <span>{isEditingPage ? "💾" : "➕"}</span>
-          <span className="hidden md:inline">{isEditingPage ? "Zapisz" : "Strona"}</span>
-          {pagesCount > 0 && !isEditingPage && (
-            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] leading-none">
-              {pagesCount}
-            </span>
-          )}
+          <span>📷</span>
+          <span className="hidden md:inline">Nowe zdjęcie</span>
         </button>
 
         {/* Pobierz z opcjami */}
@@ -220,7 +210,7 @@ export default function Toolbar({
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
             { icon: "↪",  label: "Ponów",   onClick: onRedo, disabled: !canRedo },
             { icon: "✕",  label: "Reset",   onClick: onReset, danger: true },
-            { icon: isEditingPage ? "💾" : "➕", label: isEditingPage ? "Zapisz" : "Strona", onClick: onAddPage, badge: isEditingPage ? 0 : pagesCount, primary: isEditingPage },
+            { icon: "📷", label: "Nowe", onClick: onAddPage },
             { icon: "⬇",  label: "Pobierz", onClick: () => onDownload(buildOpts()), primary: true },
           ].map(a => (
             <button

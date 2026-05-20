@@ -15,6 +15,7 @@ type Props = {
   onSelect: (index: number) => void;
   onClear: () => void;
   onDownload: () => void;
+  onCollage: () => void;
 };
 
 type DragState = {
@@ -30,7 +31,7 @@ const MOVE_THRESHOLD_PX = 8;
 export default function PdfBar({
   pages, editingIndex, currentSrc, margin, onMarginChange,
   format, onFormatChange, orientation, onOrientationChange,
-  onRemove, onReorder, onSelect, onClear, onDownload,
+  onRemove, onReorder, onSelect, onClear, onDownload, onCollage,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -243,6 +244,15 @@ export default function PdfBar({
         <option value="landscape">↔ Poziom</option>
       </select>
 
+      <button
+        onClick={onCollage}
+        disabled={pages.length < 2}
+        title="Złóż wszystkie strony w jeden obraz"
+        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700
+          text-gray-200 border border-gray-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        🎴 Kolaż
+      </button>
       <button
         onClick={onDownload}
         className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500

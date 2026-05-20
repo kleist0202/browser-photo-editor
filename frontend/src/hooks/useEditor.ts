@@ -57,15 +57,19 @@ function reducer(state: State, action: Action): State {
       };
 
     case "LOAD": {
-      // Save current edit state to the page being edited (if any) before loading a fresh src
+      // Save current edit state to the page being edited (if any), then append the new file as a fresh page
       const pagesAfterSync = syncCurrentToPages(state);
+      const newPages: Page[] = [
+        ...pagesAfterSync,
+        { src: action.src, history: [], future: [] },
+      ];
       return {
         ...state,
         src: action.src,
         history: [],
         future: [],
-        pages: pagesAfterSync,
-        editingPageIndex: null,
+        pages: newPages,
+        editingPageIndex: newPages.length - 1,
         hydrated: true,
       };
     }
@@ -591,6 +595,39 @@ export function useEditor() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, []);
 
+  const applyCollage = useCallback(async (
+    items: { src: string; natW: number; natH: number; cx: number; cy: number; w: number; rotation: number }[],
+    canvasSize: { w: number; h: number },
+  ): Promise<string> => {
+    if (items.length === 0) throw new Error("empty");
+    const scale = Math.min(3, Math.floor(2400 / Math.max(canvasSize.w, canvasSize.h)));
+    const k = Math.max(2, scale);
+    const canvasW = canvasSize.w * k;
+    const canvasH = canvasSize.h * k;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    for (const it of items) {
+      const img = await loadImage(it.src);
+      const w = it.w * k;
+      const h = (it.w * it.natH / it.natW) * k;
+      const cx = it.cx * k;
+      const cy = it.cy * k;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((it.rotation * Math.PI) / 180);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+    }
+
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const downloadPdf = useCallback(async (
     pages: string[],
     marginMm = 8,
@@ -638,5 +675,5 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, download, downloadPdf };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf };
 }

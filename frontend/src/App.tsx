@@ -11,6 +11,7 @@ import ScanBar from "./components/ScanBar";
 import PerspectiveOverlay from "./components/PerspectiveOverlay";
 import BlurOverlay, { type BlurRegion } from "./components/BlurOverlay";
 import AnnotateOverlay from "./components/AnnotateOverlay";
+import CollageOverlay, { type CollageItem, type CollageOrientation } from "./components/CollageOverlay";
 import PdfBar from "./components/PdfBar";
 import { useEditor } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
@@ -32,7 +33,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, download, downloadPdf } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -48,9 +49,13 @@ export default function App() {
   const [blurBlockSize, setBlurBlockSize] = useState(15);
   const [annotateMode, setAnnotateMode] = useState(false);
   const [annotations, setAnnotations] = useState<import("./hooks/useEditor").Annotation[]>([]);
+  const [collageMode, setCollageMode] = useState(false);
+  const [collageItems, setCollageItems] = useState<CollageItem[]>([]);
+  const [collageCanvas, setCollageCanvas] = useState({ w: 600, h: 800 });
   const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
   const [autoEnhancedSrcs, setAutoEnhancedSrcs] = useState<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement>(null);
+  const addPhotoInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const originalSrc = state.history[0] ?? state.src;
@@ -179,6 +184,95 @@ export default function App() {
       setSaturation(100);
     }
     setBusy(false);
+  };
+
+  const handleCollage = async () => {
+    if (state.pages.length < 2) return;
+    setBusy(true);
+    try {
+      const maxW = Math.min(700, window.innerWidth - 40);
+      const maxH = Math.max(300, window.innerHeight - 220);
+      let W = maxW, H = Math.round(maxW * 4 / 3);
+      if (H > maxH) { H = maxH; W = Math.round(H * 3 / 4); }
+      const canvasSize = { w: W, h: H };
+
+      const loadDim = (src: string) => new Promise<{ w: number; h: number }>(resolve => {
+        const im = new Image();
+        im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+        im.src = src;
+      });
+      const srcs = state.pages.map(p => p.src);
+      const dims = await Promise.all(srcs.map(loadDim));
+
+      const cols = Math.ceil(Math.sqrt(srcs.length));
+      const rows = Math.ceil(srcs.length / cols);
+      const cellW = W / cols;
+      const cellH = H / rows;
+      const items: CollageItem[] = srcs.map((src, i) => {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const dim = dims[i];
+        const scale = Math.min(cellW * 0.85 / dim.w, cellH * 0.85 / dim.h);
+        return {
+          src,
+          natW: dim.w,
+          natH: dim.h,
+          cx: c * cellW + cellW / 2,
+          cy: r * cellH + cellH / 2,
+          w: dim.w * scale,
+          rotation: 0,
+        };
+      });
+
+      setCollageCanvas(canvasSize);
+      setCollageItems(items);
+      setCollageMode(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const computeCollageCanvas = (orient: CollageOrientation) => {
+    const maxW = Math.min(700, window.innerWidth - 40);
+    const maxH = Math.max(300, window.innerHeight - 220);
+    // Long edge target = the smaller viewport dim. Pionowy i poziomy mają
+    // wtedy tę samą długą krawędź, więc obie orientacje wyglądają tak samo „dużo".
+    const longEdge = Math.min(maxW, maxH);
+    const shortEdge = (longEdge * 3) / 4;
+    if (orient === "portrait")  return { w: Math.round(shortEdge), h: Math.round(longEdge) };
+    if (orient === "landscape") return { w: Math.round(longEdge),  h: Math.round(shortEdge) };
+    return { w: Math.round(longEdge), h: Math.round(longEdge) };
+  };
+
+  const handleCollageOrient = (orient: CollageOrientation) => {
+    const newSize = computeCollageCanvas(orient);
+    const sx = newSize.w / collageCanvas.w;
+    const sy = newSize.h / collageCanvas.h;
+    setCollageItems(items => items.map(it => ({
+      ...it,
+      cx: it.cx * sx,
+      cy: it.cy * sy,
+    })));
+    setCollageCanvas(newSize);
+  };
+
+  const applyCollageAction = async () => {
+    if (collageItems.length === 0) {
+      setCollageMode(false);
+      return;
+    }
+    const items = collageItems;
+    const size = collageCanvas;
+    setCollageMode(false);
+    setCollageItems([]);
+    setBusy(true);
+    try {
+      const result = await applyCollage(items, size);
+      resetFilters();
+      dispatch({ type: "LOAD", src: result });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleAutoEnhance = () => {
@@ -324,12 +418,12 @@ export default function App() {
         return;
       }
       if (mod) return;
-      if (!state.src) return;
 
       if (k === "escape") {
         if (perspMode) setPerspMode(false);
         else if (blurMode) { setBlurMode(false); setBlurRegions([]); }
         else if (annotateMode) { setAnnotateMode(false); setAnnotations([]); }
+        else if (collageMode) { setCollageMode(false); setCollageItems([]); }
         else if (lupaActive) { setLupaActive(false); setLupaPos(null); }
         e.preventDefault();
         return;
@@ -342,13 +436,16 @@ export default function App() {
           applyBlurAction();
         } else if (annotateMode) {
           applyAnnotateAction();
+        } else if (collageMode) {
+          applyCollageAction();
         } else if (completedCrop && completedCrop.width > 0) {
           handleApplyCrop();
         }
         e.preventDefault();
         return;
       }
-      if (perspMode || blurMode || annotateMode) return;
+      if (!state.src) return;
+      if (perspMode || blurMode || annotateMode || collageMode) return;
 
       if (k === "r") {
         commit(src => applyRotation(src, e.shiftKey ? 270 : 90));
@@ -391,9 +488,25 @@ export default function App() {
       </header>
 
       {/* ── Główna treść ────────────────────────────────────────── */}
-      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-72 sm:pb-6" : ""}`}>
+      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src && !collageMode ? "pb-72 sm:pb-6" : ""}`}>
         {!state.hydrated ? (
           <div className="flex-1" />
+        ) : collageMode ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div
+              className="relative inline-block bg-white rounded-lg shadow-xl"
+              style={{ width: collageCanvas.w, height: collageCanvas.h }}
+            >
+              <CollageOverlay
+                items={collageItems}
+                onChange={setCollageItems}
+                canvasSize={collageCanvas}
+                onOrientationChange={handleCollageOrient}
+                onApply={applyCollageAction}
+                onCancel={() => { setCollageMode(false); setCollageItems([]); }}
+              />
+            </div>
+          </div>
         ) : !state.src ? (
           <>
             <PdfBar
@@ -411,6 +524,7 @@ export default function App() {
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
+              onCollage={handleCollage}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
@@ -439,12 +553,7 @@ export default function App() {
               onPerspective={enterPerspMode}
               onBlur={enterBlurMode}
               onAnnotate={enterAnnotateMode}
-              onAddPage={async () => {
-                const src = await ensureFilterBaked();
-                if (src) dispatch({ type: "ADD_PAGE", src });
-              }}
-              pagesCount={state.pages.length}
-              isEditingPage={state.editingPageIndex !== null}
+              onAddPage={() => addPhotoInputRef.current?.click()}
             />
 
             <PdfBar
@@ -462,6 +571,7 @@ export default function App() {
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
+              onCollage={handleCollage}
             />
 
             {/* Proporcje, filtry, skan */}
@@ -705,6 +815,18 @@ export default function App() {
           </>
         )}
       </main>
+
+      <input
+        ref={addPhotoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handleFiles([file]);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
