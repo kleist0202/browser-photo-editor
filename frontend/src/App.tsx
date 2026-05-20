@@ -10,6 +10,7 @@ import FiltersBar from "./components/FiltersBar";
 import ScanBar from "./components/ScanBar";
 import PerspectiveOverlay from "./components/PerspectiveOverlay";
 import BlurOverlay, { type BlurRegion } from "./components/BlurOverlay";
+import AnnotateOverlay from "./components/AnnotateOverlay";
 import PdfBar from "./components/PdfBar";
 import { useEditor } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
@@ -31,7 +32,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, download, downloadPdf } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, download, downloadPdf } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -45,6 +46,8 @@ export default function App() {
   const [blurMode, setBlurMode] = useState(false);
   const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([]);
   const [blurBlockSize, setBlurBlockSize] = useState(15);
+  const [annotateMode, setAnnotateMode] = useState(false);
+  const [annotations, setAnnotations] = useState<import("./hooks/useEditor").Annotation[]>([]);
   const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
   const [autoEnhancedSrcs, setAutoEnhancedSrcs] = useState<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement>(null);
@@ -53,6 +56,8 @@ export default function App() {
   const originalSrc = state.history[0] ?? state.src;
   const canPreviewOriginal = state.history.length > 0;
   const [pdfMargin, setPdfMargin] = useState(8);
+  const [pdfFormat, setPdfFormat] = useState<"a4" | "letter">("a4");
+  const [pdfOrientation, setPdfOrientation] = useState<"portrait" | "landscape" | "auto">("auto");
   const [lupaActive, setLupaActive] = useState(false);
   const [lupaPos, setLupaPos] = useState<{ x: number; y: number; touch: boolean } | null>(null);
   const LUPA_SIZE = 140;
@@ -112,6 +117,27 @@ export default function App() {
       { x: w * pad,       y: h * (1 - pad) },
     ]);
     setPerspMode(true);
+  };
+
+  const enterAnnotateMode = () => {
+    const img = imgRef.current;
+    if (!img) return;
+    setDisplaySize({ w: img.clientWidth, h: img.clientHeight });
+    setAnnotations([]);
+    setAnnotateMode(true);
+  };
+
+  const applyAnnotateAction = async () => {
+    if (!state.src || annotations.length === 0) {
+      setAnnotateMode(false);
+      setAnnotations([]);
+      return;
+    }
+    const annos = annotations;
+    const size = displaySize;
+    setAnnotateMode(false);
+    setAnnotations([]);
+    await commit(src => applyAnnotations(src, annos, size));
   };
 
   const enterBlurMode = () => {
@@ -303,6 +329,7 @@ export default function App() {
       if (k === "escape") {
         if (perspMode) setPerspMode(false);
         else if (blurMode) { setBlurMode(false); setBlurRegions([]); }
+        else if (annotateMode) { setAnnotateMode(false); setAnnotations([]); }
         else if (lupaActive) { setLupaActive(false); setLupaPos(null); }
         e.preventDefault();
         return;
@@ -313,13 +340,15 @@ export default function App() {
           commit(src => applyPerspective(src, perspPoints, displaySize));
         } else if (blurMode) {
           applyBlurAction();
+        } else if (annotateMode) {
+          applyAnnotateAction();
         } else if (completedCrop && completedCrop.width > 0) {
           handleApplyCrop();
         }
         e.preventDefault();
         return;
       }
-      if (perspMode || blurMode) return;
+      if (perspMode || blurMode || annotateMode) return;
 
       if (k === "r") {
         commit(src => applyRotation(src, e.shiftKey ? 270 : 90));
@@ -362,7 +391,7 @@ export default function App() {
       </header>
 
       {/* ── Główna treść ────────────────────────────────────────── */}
-      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-56 sm:pb-6" : ""}`}>
+      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src ? "pb-72 sm:pb-6" : ""}`}>
         {!state.hydrated ? (
           <div className="flex-1" />
         ) : !state.src ? (
@@ -373,11 +402,15 @@ export default function App() {
               currentSrc={state.src}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
+              format={pdfFormat}
+              onFormatChange={setPdfFormat}
+              orientation={pdfOrientation}
+              onOrientationChange={setPdfOrientation}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin)}
+              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
@@ -405,6 +438,7 @@ export default function App() {
               hasCrop={!!completedCrop?.width && completedCrop.width > 0}
               onPerspective={enterPerspMode}
               onBlur={enterBlurMode}
+              onAnnotate={enterAnnotateMode}
               onAddPage={async () => {
                 const src = await ensureFilterBaked();
                 if (src) dispatch({ type: "ADD_PAGE", src });
@@ -419,11 +453,15 @@ export default function App() {
               currentSrc={state.src}
               margin={pdfMargin}
               onMarginChange={setPdfMargin}
+              format={pdfFormat}
+              onFormatChange={setPdfFormat}
+              orientation={pdfOrientation}
+              onOrientationChange={setPdfOrientation}
               onRemove={i => dispatch({ type: "REMOVE_PAGE", index: i })}
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin)}
+              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
             />
 
             {/* Proporcje, filtry, skan */}
@@ -501,6 +539,27 @@ export default function App() {
                     displaySize={displaySize}
                     onCancel={() => { setBlurMode(false); setBlurRegions([]); }}
                     onApply={applyBlurAction}
+                  />
+                </div>
+              ) : annotateMode ? (
+                <div className="relative inline-block">
+                  <img
+                    src={state.src!}
+                    alt="adnotacje"
+                    style={{
+                      maxHeight: "min(65vh, calc(100svh - 280px))",
+                      maxWidth: "100%",
+                      display: "block",
+                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                    }}
+                    className="rounded-lg"
+                  />
+                  <AnnotateOverlay
+                    annos={annotations}
+                    onChange={setAnnotations}
+                    displaySize={displaySize}
+                    onCancel={() => { setAnnotateMode(false); setAnnotations([]); }}
+                    onApply={applyAnnotateAction}
                   />
                 </div>
               ) : (

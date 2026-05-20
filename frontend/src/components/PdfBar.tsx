@@ -6,6 +6,10 @@ type Props = {
   currentSrc: string | null;
   margin: number;
   onMarginChange: (mm: number) => void;
+  format: "a4" | "letter";
+  onFormatChange: (f: "a4" | "letter") => void;
+  orientation: "portrait" | "landscape" | "auto";
+  onOrientationChange: (o: "portrait" | "landscape" | "auto") => void;
   onRemove: (index: number) => void;
   onReorder: (from: number, to: number) => void;
   onSelect: (index: number) => void;
@@ -25,6 +29,7 @@ const MOVE_THRESHOLD_PX = 8;
 
 export default function PdfBar({
   pages, editingIndex, currentSrc, margin, onMarginChange,
+  format, onFormatChange, orientation, onOrientationChange,
   onRemove, onReorder, onSelect, onClear, onDownload,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -217,6 +222,26 @@ export default function PdfBar({
         />
         <span className="text-indigo-400 text-xs font-mono w-10 text-right">{margin} mm</span>
       </label>
+
+      <select
+        value={format}
+        onChange={e => onFormatChange(e.target.value as "a4" | "letter")}
+        className="shrink-0 bg-gray-800 text-gray-200 text-xs border border-gray-700 rounded-lg px-2 py-1.5
+          focus:outline-none focus:border-indigo-500"
+      >
+        <option value="a4">A4</option>
+        <option value="letter">Letter</option>
+      </select>
+      <select
+        value={orientation}
+        onChange={e => onOrientationChange(e.target.value as "portrait" | "landscape" | "auto")}
+        className="shrink-0 bg-gray-800 text-gray-200 text-xs border border-gray-700 rounded-lg px-2 py-1.5
+          focus:outline-none focus:border-indigo-500"
+      >
+        <option value="auto">Auto</option>
+        <option value="portrait">↑ Pion</option>
+        <option value="landscape">↔ Poziom</option>
+      </select>
 
       <button
         onClick={onDownload}

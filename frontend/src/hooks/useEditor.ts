@@ -6,6 +6,10 @@ import { saveState, loadState, clearState } from "../utils/storage";
 
 export type Page = { src: string; history: string[]; future: string[] };
 
+export type Stroke = { kind: "stroke"; color: string; size: number; pts: { x: number; y: number }[] };
+export type TextAnno = { kind: "text"; color: string; size: number; x: number; y: number; text: string };
+export type Annotation = Stroke | TextAnno;
+
 type State = {
   src: string | null;
   history: string[];
@@ -461,6 +465,47 @@ export function useEditor() {
     return canvas.toDataURL("image/png");
   }, []);
 
+  const applyAnnotations = useCallback(async (
+    src: string,
+    annos: Annotation[],
+    displaySize: { w: number; h: number },
+  ): Promise<string> => {
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+
+    const scaleX = img.width / displaySize.w;
+    const scaleY = img.height / displaySize.h;
+    const scale = Math.max(scaleX, scaleY);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    for (const a of annos) {
+      if (a.kind === "stroke") {
+        ctx.strokeStyle = a.color;
+        ctx.lineWidth = a.size * scale;
+        ctx.beginPath();
+        for (let i = 0; i < a.pts.length; i++) {
+          const x = a.pts[i].x * scaleX;
+          const y = a.pts[i].y * scaleY;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = a.color;
+        ctx.font = `${a.size * scale}px sans-serif`;
+        ctx.textBaseline = "top";
+        ctx.fillText(a.text, a.x * scaleX, a.y * scaleY);
+      }
+    }
+
+    return canvas.toDataURL("image/png");
+  }, []);
+
   const applyBlur = useCallback(async (
     src: string,
     displayRegions: { x: number; y: number; w: number; h: number }[],
@@ -546,18 +591,33 @@ export function useEditor() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, []);
 
-  const downloadPdf = useCallback(async (pages: string[], marginMm = 8) => {
+  const downloadPdf = useCallback(async (
+    pages: string[],
+    marginMm = 8,
+    pdfOpts: { format: "a4" | "letter"; orientation: "portrait" | "landscape" | "auto" } = {
+      format: "a4", orientation: "auto",
+    },
+  ) => {
     if (pages.length === 0) return;
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
     const margin = (marginMm * 72) / 25.4;
-    const maxW = pageW - 2 * margin;
-    const maxH = pageH - 2 * margin;
+
+    const imgs = await Promise.all(pages.map(loadImage));
+    const orientations: ("portrait" | "landscape")[] = imgs.map(img =>
+      pdfOpts.orientation === "auto"
+        ? (img.width >= img.height ? "landscape" : "portrait")
+        : pdfOpts.orientation
+    );
+
+    const doc = new jsPDF({ unit: "pt", format: pdfOpts.format, orientation: orientations[0] });
 
     for (let i = 0; i < pages.length; i++) {
-      if (i > 0) doc.addPage();
-      const img = await loadImage(pages[i]);
+      if (i > 0) doc.addPage(pdfOpts.format, orientations[i]);
+      const img = imgs[i];
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const maxW = pageW - 2 * margin;
+      const maxH = pageH - 2 * margin;
+
       const canvas = document.createElement("canvas");
       canvas.width = img.width;
       canvas.height = img.height;
@@ -578,5 +638,5 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, download, downloadPdf };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, download, downloadPdf };
 }
