@@ -17,13 +17,14 @@ type Props = {
   onPerspective: () => void;
   onBlur: () => void;
   onAnnotate: () => void;
+  onPrint: () => void;
   onAddPage: () => void;
 };
 
 export default function Toolbar({
   onRotateCW, onRotateCCW, onFlipH, onFlipV,
   onApplyCrop, onUndo, onRedo, onReset, onDownload,
-  canUndo, canRedo, hasCrop, onPerspective, onBlur, onAnnotate,
+  canUndo, canRedo, hasCrop, onPerspective, onBlur, onAnnotate, onPrint,
   onAddPage,
 }: Props) {
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
@@ -81,6 +82,7 @@ export default function Toolbar({
         {iconBtn("⬡", "Perspektywa", onPerspective)}
         {iconBtn("🧱", "Zamaż", onBlur)}
         {iconBtn("✏️", "Adnotuj", onAnnotate)}
+        {iconBtn("🖨", "Wydruk", onPrint)}
 
         <div className="w-px h-6 bg-gray-700" />
 
@@ -206,6 +208,7 @@ export default function Toolbar({
             { icon: "⬡",  label: "Perspekt.", onClick: onPerspective },
             { icon: "🧱", label: "Zamaż",     onClick: onBlur },
             { icon: "✏️", label: "Adnotuj",   onClick: onAnnotate },
+            { icon: "🖨", label: "Wydruk",    onClick: onPrint },
             { icon: "✂",  label: "Przytnij", onClick: onApplyCrop, disabled: !hasCrop, primary: true },
             { icon: "↩",  label: "Cofnij",  onClick: onUndo, disabled: !canUndo },
             { icon: "↪",  label: "Ponów",   onClick: onRedo, disabled: !canRedo },

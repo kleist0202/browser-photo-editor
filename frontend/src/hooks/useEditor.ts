@@ -4,7 +4,13 @@ import jsPDF from "jspdf";
 import { warpPerspective, type Point } from "../utils/homography";
 import { saveState, loadState, clearState } from "../utils/storage";
 
-export type Page = { src: string; history: string[]; future: string[] };
+export type Page = {
+  src: string;
+  history: string[];
+  future: string[];
+  printW?: number;
+  printH?: number;
+};
 
 export type Stroke = { kind: "stroke"; color: string; size: number; pts: { x: number; y: number }[] };
 export type TextAnno = { kind: "text"; color: string; size: number; x: number; y: number; text: string };
@@ -30,7 +36,8 @@ type Action =
   | { type: "ADD_PAGE"; src: string }
   | { type: "REMOVE_PAGE"; index: number }
   | { type: "REORDER_PAGES"; from: number; to: number }
-  | { type: "CLEAR_PAGES" };
+  | { type: "CLEAR_PAGES" }
+  | { type: "UPDATE_PAGE"; index: number; patch: Partial<Page> };
 
 function syncCurrentToPages(state: State): Page[] {
   if (state.editingPageIndex === null || !state.src) return state.pages;
@@ -170,6 +177,14 @@ function reducer(state: State, action: Action): State {
 
     case "CLEAR_PAGES":
       return { ...state, pages: [], editingPageIndex: null };
+
+    case "UPDATE_PAGE": {
+      const idx = action.index;
+      if (idx < 0 || idx >= state.pages.length) return state;
+      const next = state.pages.slice();
+      next[idx] = { ...next[idx], ...action.patch };
+      return { ...state, pages: next };
+    }
   }
 }
 
@@ -600,10 +615,9 @@ export function useEditor() {
     canvasSize: { w: number; h: number },
   ): Promise<string> => {
     if (items.length === 0) throw new Error("empty");
-    const scale = Math.min(3, Math.floor(2400 / Math.max(canvasSize.w, canvasSize.h)));
-    const k = Math.max(2, scale);
-    const canvasW = canvasSize.w * k;
-    const canvasH = canvasSize.h * k;
+    const k = Math.max(2, Math.min(3, Math.floor(2400 / Math.max(canvasSize.w, canvasSize.h))));
+    const canvasW = Math.round(canvasSize.w * k);
+    const canvasH = Math.round(canvasSize.h * k);
 
     const canvas = document.createElement("canvas");
     canvas.width = canvasW;
@@ -629,7 +643,7 @@ export function useEditor() {
   }, []);
 
   const downloadPdf = useCallback(async (
-    pages: string[],
+    pages: { src: string; printW?: number; printH?: number }[],
     marginMm = 8,
     pdfOpts: { format: "a4" | "letter"; orientation: "portrait" | "landscape" | "auto" } = {
       format: "a4", orientation: "auto",
@@ -637,8 +651,9 @@ export function useEditor() {
   ) => {
     if (pages.length === 0) return;
     const margin = (marginMm * 72) / 25.4;
+    const ptPerMm = 72 / 25.4;
 
-    const imgs = await Promise.all(pages.map(loadImage));
+    const imgs = await Promise.all(pages.map(p => loadImage(p.src)));
     const orientations: ("portrait" | "landscape")[] = imgs.map(img =>
       pdfOpts.orientation === "auto"
         ? (img.width >= img.height ? "landscape" : "portrait")
@@ -650,6 +665,7 @@ export function useEditor() {
     for (let i = 0; i < pages.length; i++) {
       if (i > 0) doc.addPage(pdfOpts.format, orientations[i]);
       const img = imgs[i];
+      const meta = pages[i];
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const maxW = pageW - 2 * margin;
@@ -664,9 +680,15 @@ export function useEditor() {
       ctx.drawImage(img, 0, 0);
       const jpegUrl = canvas.toDataURL("image/jpeg", 0.85);
 
-      const ratio = Math.min(maxW / img.width, maxH / img.height);
-      const w = img.width * ratio;
-      const h = img.height * ratio;
+      let w: number, h: number;
+      if (meta.printW && meta.printW > 0 && meta.printH && meta.printH > 0) {
+        w = meta.printW * ptPerMm;
+        h = meta.printH * ptPerMm;
+      } else {
+        const ratio = Math.min(maxW / img.width, maxH / img.height);
+        w = img.width * ratio;
+        h = img.height * ratio;
+      }
       const x = (pageW - w) / 2;
       const y = (pageH - h) / 2;
       doc.addImage(jpegUrl, "JPEG", x, y, w, h);
@@ -675,5 +697,29 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf };
+  const downloadPrintable = useCallback(async (
+    src: string,
+    printWMm: number,
+    printHMm: number,
+    pdfOpts: { format: "a4" | "letter"; orientation: "portrait" | "landscape" | "auto" },
+  ): Promise<void> => {
+    const ptPerMm = 72 / 25.4;
+    const orientation = pdfOpts.orientation === "auto" ? "portrait" : pdfOpts.orientation;
+    const doc = new jsPDF({ unit: "pt", format: pdfOpts.format, orientation });
+
+    const img = await loadImage(src);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, img.width, img.height);
+    ctx.drawImage(img, 0, 0);
+    const jpegUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+    doc.addImage(jpegUrl, "JPEG", 0, 0, printWMm * ptPerMm, printHMm * ptPerMm);
+    doc.save("print.pdf");
+  }, []);
+
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable };
 }

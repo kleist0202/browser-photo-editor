@@ -13,6 +13,7 @@ import BlurOverlay, { type BlurRegion } from "./components/BlurOverlay";
 import AnnotateOverlay from "./components/AnnotateOverlay";
 import CollageOverlay, { type CollageItem, type CollageOrientation } from "./components/CollageOverlay";
 import PdfBar from "./components/PdfBar";
+import PrintSizeBar from "./components/PrintSizeBar";
 import { useEditor } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
 
@@ -33,7 +34,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -52,6 +53,7 @@ export default function App() {
   const [collageMode, setCollageMode] = useState(false);
   const [collageItems, setCollageItems] = useState<CollageItem[]>([]);
   const [collageCanvas, setCollageCanvas] = useState({ w: 600, h: 800 });
+  const [printMode, setPrintMode] = useState(false);
   const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
   const [autoEnhancedSrcs, setAutoEnhancedSrcs] = useState<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement>(null);
@@ -63,6 +65,13 @@ export default function App() {
   const [pdfMargin, setPdfMargin] = useState(8);
   const [pdfFormat, setPdfFormat] = useState<"a4" | "letter">("a4");
   const [pdfOrientation, setPdfOrientation] = useState<"portrait" | "landscape" | "auto">("auto");
+
+  const portraitPage = pdfFormat === "letter" ? { w: 215.9, h: 279.4 } : { w: 210, h: 297 };
+  const pageDims = pdfOrientation === "landscape"
+    ? { w: portraitPage.h, h: portraitPage.w }
+    : portraitPage;
+
+  const editingPage = state.editingPageIndex !== null ? state.pages[state.editingPageIndex] : null;
   const [lupaActive, setLupaActive] = useState(false);
   const [lupaPos, setLupaPos] = useState<{ x: number; y: number; touch: boolean } | null>(null);
   const LUPA_SIZE = 140;
@@ -186,6 +195,47 @@ export default function App() {
     setBusy(false);
   };
 
+  const enterPrintMode = () => {
+    if (!state.src || state.editingPageIndex === null) return;
+    const page = state.pages[state.editingPageIndex];
+    if (page.printW === undefined && page.printH === undefined) {
+      const img = imgRef.current;
+      if (img && img.naturalWidth > 0) {
+        const natRatio = img.naturalWidth / img.naturalHeight;
+        const margin = 10;
+        const availW = pageDims.w - 2 * margin;
+        const availH = pageDims.h - 2 * margin;
+        let pw: number, ph: number;
+        if (natRatio > availW / availH) {
+          pw = availW;
+          ph = pw / natRatio;
+        } else {
+          ph = availH;
+          pw = ph * natRatio;
+        }
+        dispatch({
+          type: "UPDATE_PAGE",
+          index: state.editingPageIndex,
+          patch: { printW: Math.round(pw * 10) / 10, printH: Math.round(ph * 10) / 10 },
+        });
+      }
+    }
+    setPrintMode(true);
+  };
+
+  const handlePrintDownload = async () => {
+    if (!state.src || !editingPage) return;
+    const w = editingPage.printW;
+    const h = editingPage.printH;
+    if (!w || !h) return;
+    setBusy(true);
+    try {
+      await downloadPrintable(state.src, w, h, { format: pdfFormat, orientation: pdfOrientation });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleCollage = async () => {
     if (state.pages.length < 2) return;
     setBusy(true);
@@ -235,8 +285,6 @@ export default function App() {
   const computeCollageCanvas = (orient: CollageOrientation) => {
     const maxW = Math.min(700, window.innerWidth - 40);
     const maxH = Math.max(300, window.innerHeight - 220);
-    // Long edge target = the smaller viewport dim. Pionowy i poziomy mają
-    // wtedy tę samą długą krawędź, więc obie orientacje wyglądają tak samo „dużo".
     const longEdge = Math.min(maxW, maxH);
     const shortEdge = (longEdge * 3) / 4;
     if (orient === "portrait")  return { w: Math.round(shortEdge), h: Math.round(longEdge) };
@@ -424,6 +472,7 @@ export default function App() {
         else if (blurMode) { setBlurMode(false); setBlurRegions([]); }
         else if (annotateMode) { setAnnotateMode(false); setAnnotations([]); }
         else if (collageMode) { setCollageMode(false); setCollageItems([]); }
+        else if (printMode) setPrintMode(false);
         else if (lupaActive) { setLupaActive(false); setLupaPos(null); }
         e.preventDefault();
         return;
@@ -445,7 +494,7 @@ export default function App() {
         return;
       }
       if (!state.src) return;
-      if (perspMode || blurMode || annotateMode || collageMode) return;
+      if (perspMode || blurMode || annotateMode || collageMode || printMode) return;
 
       if (k === "r") {
         commit(src => applyRotation(src, e.shiftKey ? 270 : 90));
@@ -488,7 +537,7 @@ export default function App() {
       </header>
 
       {/* ── Główna treść ────────────────────────────────────────── */}
-      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src && !collageMode ? "pb-72 sm:pb-6" : ""}`}>
+      <main className={`flex-1 flex flex-col gap-3 p-3 sm:p-6 ${state.src && !collageMode && !printMode ? "pb-72 sm:pb-6" : ""}`}>
         {!state.hydrated ? (
           <div className="flex-1" />
         ) : collageMode ? (
@@ -507,6 +556,61 @@ export default function App() {
               />
             </div>
           </div>
+        ) : printMode && state.src && editingPage ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-3">
+            <div
+              className="relative bg-white shadow-xl inline-block overflow-hidden"
+              style={{
+                height: "min(60vh, calc(100svh - 240px))",
+                aspectRatio: `${pageDims.w} / ${pageDims.h}`,
+                maxWidth: "100%",
+              }}
+            >
+              <img
+                ref={imgRef}
+                src={state.src}
+                alt="podgląd wydruku"
+                onLoad={e => {
+                  const img = e.currentTarget;
+                  setOriginalAspect(img.naturalWidth / img.naturalHeight);
+                }}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: editingPage.printW ? `${(editingPage.printW / pageDims.w) * 100}%` : "100%",
+                  height: editingPage.printH ? `${(editingPage.printH / pageDims.h) * 100}%` : "100%",
+                  objectFit: editingPage.printW && editingPage.printH ? "fill" : "contain",
+                }}
+              />
+            </div>
+            <PrintSizeBar
+              printW={editingPage.printW}
+              printH={editingPage.printH}
+              natW={imgRef.current?.naturalWidth ?? 0}
+              natH={imgRef.current?.naturalHeight ?? 0}
+              onChange={(w, h) => dispatch({
+                type: "UPDATE_PAGE",
+                index: state.editingPageIndex!,
+                patch: { printW: w, printH: h },
+              })}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPrintMode(false)}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700"
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={handlePrintDownload}
+                disabled={!editingPage.printW || !editingPage.printH}
+                className="px-4 py-2 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                📄 Pobierz PDF
+              </button>
+            </div>
+          </div>
         ) : !state.src ? (
           <>
             <PdfBar
@@ -523,7 +627,7 @@ export default function App() {
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
+              onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
             />
             <div className="flex-1 flex items-center justify-center">
@@ -553,6 +657,7 @@ export default function App() {
               onPerspective={enterPerspMode}
               onBlur={enterBlurMode}
               onAnnotate={enterAnnotateMode}
+              onPrint={enterPrintMode}
               onAddPage={() => addPhotoInputRef.current?.click()}
             />
 
@@ -570,7 +675,7 @@ export default function App() {
               onReorder={(from, to) => dispatch({ type: "REORDER_PAGES", from, to })}
               onSelect={i => { resetFilters(); dispatch({ type: "LOAD_PAGE", index: i }); }}
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
-              onDownload={() => downloadPdf(state.pages.map(p => p.src), pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
+              onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
             />
 
