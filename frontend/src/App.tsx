@@ -14,7 +14,7 @@ import AnnotateOverlay from "./components/AnnotateOverlay";
 import CollageOverlay, { type CollageItem, type CollageOrientation } from "./components/CollageOverlay";
 import PdfBar from "./components/PdfBar";
 import PrintSizeBar from "./components/PrintSizeBar";
-import { useEditor } from "./hooks/useEditor";
+import { useEditor, buildFilterString } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
 
 function initCrop(width: number, height: number, aspect?: number): Crop {
@@ -34,7 +34,7 @@ function initCrop(width: number, height: number, aspect?: number): Crop {
 }
 
 export default function App() {
-  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable } = useEditor();
+  const { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable, downloadZip } = useEditor();
   const [crop, setCrop] = useState<Crop>();
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -42,6 +42,8 @@ export default function App() {
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
   const [saturation, setSaturation] = useState(100);
+  const [hue, setHue] = useState(0);
+  const [temperature, setTemperature] = useState(0);
   const [perspMode, setPerspMode] = useState(false);
   const [perspPoints, setPerspPoints] = useState<Point[]>([]);
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
@@ -54,6 +56,9 @@ export default function App() {
   const [collageItems, setCollageItems] = useState<CollageItem[]>([]);
   const [collageCanvas, setCollageCanvas] = useState({ w: 600, h: 800 });
   const [printMode, setPrintMode] = useState(false);
+  const [printCopies, setPrintCopies] = useState(1);
+  const [printCopiesText, setPrintCopiesText] = useState("1");
+  useEffect(() => { setPrintCopiesText(String(printCopies)); }, [printCopies]);
   const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
   const [autoEnhancedSrcs, setAutoEnhancedSrcs] = useState<Set<string>>(new Set());
   const imgRef = useRef<HTMLImageElement>(null);
@@ -104,6 +109,8 @@ export default function App() {
     setBrightness(100);
     setContrast(100);
     setSaturation(100);
+    setHue(0);
+    setTemperature(0);
   };
 
   const handleFiles = async (files: File[]) => {
@@ -176,22 +183,21 @@ export default function App() {
     await commit(src => applyBlur(src, regions, size, block));
   };
 
+  const isFilterDirty = () =>
+    brightness !== 100 || contrast !== 100 || saturation !== 100 || hue !== 0 || temperature !== 0;
+
   const commit = async (fn: (src: string) => Promise<string>) => {
     if (!state.src) return;
     setBusy(true);
-    const isFiltered = brightness !== 100 || contrast !== 100 || saturation !== 100;
-    const baseSrc = isFiltered
-      ? await applyFilters(state.src, brightness, contrast, saturation)
+    const dirty = isFilterDirty();
+    const baseSrc = dirty
+      ? await applyFilters(state.src, brightness, contrast, saturation, hue, temperature)
       : state.src;
     const result = await fn(baseSrc);
     dispatch({ type: "COMMIT", result });
     setCrop(undefined);
     setCompletedCrop(undefined);
-    if (isFiltered) {
-      setBrightness(100);
-      setContrast(100);
-      setSaturation(100);
-    }
+    if (dirty) resetFilters();
     setBusy(false);
   };
 
@@ -220,6 +226,7 @@ export default function App() {
         });
       }
     }
+    setPrintCopies(1);
     setPrintMode(true);
   };
 
@@ -230,7 +237,7 @@ export default function App() {
     if (!w || !h) return;
     setBusy(true);
     try {
-      await downloadPrintable(state.src, w, h, { format: pdfFormat, orientation: pdfOrientation });
+      await downloadPrintable(state.src, w, h, { format: pdfFormat, orientation: pdfOrientation }, printCopies);
     } finally {
       setBusy(false);
     }
@@ -344,13 +351,11 @@ export default function App() {
 
   const ensureFilterBaked = async (): Promise<string | null> => {
     if (!state.src) return null;
-    if (brightness === 100 && contrast === 100 && saturation === 100) return state.src;
+    if (!isFilterDirty()) return state.src;
     setBusy(true);
-    const baked = await applyFilters(state.src, brightness, contrast, saturation);
+    const baked = await applyFilters(state.src, brightness, contrast, saturation, hue, temperature);
     dispatch({ type: "COMMIT", result: baked });
-    setBrightness(100);
-    setContrast(100);
-    setSaturation(100);
+    resetFilters();
     setBusy(false);
     return baked;
   };
@@ -556,7 +561,15 @@ export default function App() {
               />
             </div>
           </div>
-        ) : printMode && state.src && editingPage ? (
+        ) : printMode && state.src && editingPage ? (() => {
+          const pW = editingPage.printW;
+          const pH = editingPage.printH;
+          const cols = pW ? Math.max(1, Math.floor(pageDims.w / pW)) : 1;
+          const rowsPerPage = pH ? Math.max(1, Math.floor(pageDims.h / pH)) : 1;
+          const perPage = cols * rowsPerPage;
+          const previewCount = pW && pH ? Math.min(printCopies, perPage) : 1;
+
+          return (
           <div className="flex-1 flex flex-col items-center justify-center gap-4 p-3">
             <div
               className="relative bg-white shadow-xl inline-block overflow-hidden"
@@ -566,23 +579,43 @@ export default function App() {
                 maxWidth: "100%",
               }}
             >
-              <img
-                ref={imgRef}
-                src={state.src}
-                alt="podgląd wydruku"
-                onLoad={e => {
-                  const img = e.currentTarget;
-                  setOriginalAspect(img.naturalWidth / img.naturalHeight);
-                }}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: editingPage.printW ? `${(editingPage.printW / pageDims.w) * 100}%` : "100%",
-                  height: editingPage.printH ? `${(editingPage.printH / pageDims.h) * 100}%` : "100%",
-                  objectFit: editingPage.printW && editingPage.printH ? "fill" : "contain",
-                }}
-              />
+              {pW && pH ? (
+                Array.from({ length: previewCount }).map((_, i) => {
+                  const c = i % cols;
+                  const r = Math.floor(i / cols);
+                  return (
+                    <img
+                      key={i}
+                      ref={i === 0 ? imgRef : undefined}
+                      src={state.src!}
+                      alt={i === 0 ? "podgląd wydruku" : ""}
+                      onLoad={i === 0 ? (e => {
+                        const img = e.currentTarget;
+                        setOriginalAspect(img.naturalWidth / img.naturalHeight);
+                      }) : undefined}
+                      style={{
+                        position: "absolute",
+                        left: `${(c * pW / pageDims.w) * 100}%`,
+                        top: `${(r * pH / pageDims.h) * 100}%`,
+                        width: `${(pW / pageDims.w) * 100}%`,
+                        height: `${(pH / pageDims.h) * 100}%`,
+                        objectFit: "fill",
+                      }}
+                    />
+                  );
+                })
+              ) : (
+                <img
+                  ref={imgRef}
+                  src={state.src}
+                  alt="podgląd wydruku"
+                  onLoad={e => {
+                    const img = e.currentTarget;
+                    setOriginalAspect(img.naturalWidth / img.naturalHeight);
+                  }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              )}
             </div>
             <PrintSizeBar
               printW={editingPage.printW}
@@ -595,6 +628,30 @@ export default function App() {
                 patch: { printW: w, printH: h },
               })}
             />
+            <label className="flex items-center gap-2 px-3 py-2 bg-gray-900 rounded-2xl border border-gray-800">
+              <span className="text-gray-500 text-xs uppercase tracking-widest">Kopii</span>
+              <input
+                type="number"
+                min={1}
+                max={9999}
+                value={printCopiesText}
+                onChange={e => {
+                  setPrintCopiesText(e.target.value);
+                  const n = parseInt(e.target.value, 10);
+                  if (!isNaN(n) && n >= 1) setPrintCopies(n);
+                }}
+                onBlur={() => setPrintCopiesText(String(printCopies))}
+                className="w-16 bg-gray-800 text-white text-sm px-2 py-1 rounded border border-gray-700 focus:outline-none focus:border-indigo-500
+                  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              {pW && pH && (
+                <span className="text-gray-500 text-xs">
+                  {printCopies > perPage
+                    ? `· ${Math.ceil(printCopies / perPage)} stron(y) · ${perPage} / arkusz`
+                    : `· max ${perPage} / arkusz`}
+                </span>
+              )}
+            </label>
             <div className="flex gap-2">
               <button
                 onClick={() => setPrintMode(false)}
@@ -611,7 +668,8 @@ export default function App() {
               </button>
             </div>
           </div>
-        ) : !state.src ? (
+          );
+        })() : !state.src ? (
           <>
             <PdfBar
               pages={state.pages.map(p => p.src)}
@@ -629,6 +687,7 @@ export default function App() {
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
+              onDownloadZip={() => downloadZip(state.pages)}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
@@ -677,6 +736,7 @@ export default function App() {
               onClear={() => dispatch({ type: "CLEAR_PAGES" })}
               onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
+              onDownloadZip={() => downloadZip(state.pages)}
             />
 
             {/* Proporcje, filtry, skan */}
@@ -697,8 +757,10 @@ export default function App() {
                 brightness={brightness}
                 contrast={contrast}
                 saturation={saturation}
-                onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
-                onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
+                hue={hue}
+                temperature={temperature}
+                onChange={(b, c, s, h, t) => { setBrightness(b); setContrast(c); setSaturation(s); setHue(h); setTemperature(t); }}
+                onReset={resetFilters}
                 onAutoEnhance={handleAutoEnhance}
                 onSharpen={handleSharpen}
                 isAutoActive={isAutoActive}
@@ -742,7 +804,7 @@ export default function App() {
                       maxHeight: "min(65vh, calc(100svh - 280px))",
                       maxWidth: "100%",
                       display: "block",
-                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                      filter: buildFilterString(brightness, contrast, saturation, hue, temperature),
                     }}
                     className="rounded-lg"
                   />
@@ -765,7 +827,7 @@ export default function App() {
                       maxHeight: "min(65vh, calc(100svh - 280px))",
                       maxWidth: "100%",
                       display: "block",
-                      filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                      filter: buildFilterString(brightness, contrast, saturation, hue, temperature),
                     }}
                     className="rounded-lg"
                   />
@@ -795,7 +857,7 @@ export default function App() {
                         maxHeight: "min(65vh, calc(100svh - 280px))",
                         maxWidth: "100%",
                         display: "block",
-                        filter: `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`,
+                        filter: buildFilterString(brightness, contrast, saturation, hue, temperature),
                       }}
                       className="rounded-lg mx-auto"
                       onLoad={e => {
@@ -905,8 +967,10 @@ export default function App() {
                 brightness={brightness}
                 contrast={contrast}
                 saturation={saturation}
-                onChange={(b, c, s) => { setBrightness(b); setContrast(c); setSaturation(s); }}
-                onReset={() => { setBrightness(100); setContrast(100); setSaturation(100); }}
+                hue={hue}
+                temperature={temperature}
+                onChange={(b, c, s, h, t) => { setBrightness(b); setContrast(c); setSaturation(s); setHue(h); setTemperature(t); }}
+                onReset={resetFilters}
                 onAutoEnhance={handleAutoEnhance}
                 onSharpen={handleSharpen}
                 isAutoActive={isAutoActive}

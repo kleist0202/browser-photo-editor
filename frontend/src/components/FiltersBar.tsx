@@ -2,7 +2,9 @@ type Props = {
   brightness: number;
   contrast: number;
   saturation: number;
-  onChange: (brightness: number, contrast: number, saturation: number) => void;
+  hue: number;
+  temperature: number;
+  onChange: (brightness: number, contrast: number, saturation: number, hue: number, temperature: number) => void;
   onReset: () => void;
   onAutoEnhance: () => void;
   onSharpen: () => void;
@@ -13,35 +15,42 @@ type Props = {
 type SliderProps = {
   label: string;
   value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  neutral?: number;
+  suffix?: string;
   onChange: (v: number) => void;
 };
 
-function Slider({ label, value, onChange }: SliderProps) {
+function Slider({ label, value, min = 0, max = 200, step = 5, neutral = 100, suffix = "%", onChange }: SliderProps) {
   return (
-    <div className="grid grid-cols-[80px_1fr_36px] items-center gap-2">
+    <div className="grid grid-cols-[70px_1fr_36px] items-center gap-2">
       <span className="text-gray-400 text-xs">{label}</span>
       <input
         type="range"
-        min={0}
-        max={200}
-        step={5}
+        min={min}
+        max={max}
+        step={step}
         value={value}
         onChange={e => onChange(Number(e.target.value))}
         className="w-full accent-indigo-500"
       />
-      <span className={`text-xs font-mono text-right ${value === 100 ? "text-gray-600" : "text-indigo-400"}`}>
-        {value}%
+      <span className={`text-xs font-mono text-right ${value === neutral ? "text-gray-600" : "text-indigo-400"}`}>
+        {value}{suffix}
       </span>
     </div>
   );
 }
 
 export default function FiltersBar({
-  brightness, contrast, saturation,
+  brightness, contrast, saturation, hue, temperature,
   onChange, onReset, onAutoEnhance, onSharpen,
   isAutoActive, isSharpenActive,
 }: Props) {
-  const isDirty = brightness !== 100 || contrast !== 100 || saturation !== 100;
+  const isDirty =
+    brightness !== 100 || contrast !== 100 || saturation !== 100 ||
+    hue !== 0 || temperature !== 0;
 
   return (
     <div className="px-3 py-3 bg-gray-900 rounded-2xl border border-gray-800 space-y-2">
@@ -80,9 +89,15 @@ export default function FiltersBar({
         </div>
       </div>
 
-      <Slider label="Jasność"   value={brightness} onChange={v => onChange(v, contrast, saturation)} />
-      <Slider label="Kontrast"  value={contrast}   onChange={v => onChange(brightness, v, saturation)} />
-      <Slider label="Nasycenie" value={saturation} onChange={v => onChange(brightness, contrast, v)} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+        <Slider label="Jasność"     value={brightness} onChange={v => onChange(v, contrast, saturation, hue, temperature)} />
+        <Slider label="Kontrast"    value={contrast}   onChange={v => onChange(brightness, v, saturation, hue, temperature)} />
+        <Slider label="Nasycenie"   value={saturation} onChange={v => onChange(brightness, contrast, v, hue, temperature)} />
+        <Slider label="Odcień"      value={hue}        min={-180} max={180} step={5} neutral={0} suffix="°"
+                onChange={v => onChange(brightness, contrast, saturation, v, temperature)} />
+        <Slider label="Temperatura" value={temperature} min={-100} max={100} step={5} neutral={0} suffix=""
+                onChange={v => onChange(brightness, contrast, saturation, hue, v)} />
+      </div>
     </div>
   );
 }

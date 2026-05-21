@@ -16,6 +16,7 @@ type Props = {
   onClear: () => void;
   onDownload: () => void;
   onCollage: () => void;
+  onDownloadZip: () => void;
 };
 
 type DragState = {
@@ -31,7 +32,7 @@ const MOVE_THRESHOLD_PX = 8;
 export default function PdfBar({
   pages, editingIndex, currentSrc, margin, onMarginChange,
   format, onFormatChange, orientation, onOrientationChange,
-  onRemove, onReorder, onSelect, onClear, onDownload, onCollage,
+  onRemove, onReorder, onSelect, onClear, onDownload, onCollage, onDownloadZip,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -259,6 +260,14 @@ export default function PdfBar({
           text-white shrink-0"
       >
         📄 Pobierz PDF
+      </button>
+      <button
+        onClick={onDownloadZip}
+        title="Pobierz wszystkie strony jako ZIP (JPG)"
+        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700
+          text-gray-200 border border-gray-700 shrink-0"
+      >
+        📦 ZIP
       </button>
       <button
         onClick={onClear}

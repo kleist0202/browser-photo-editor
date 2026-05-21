@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "jspdf": "^2.5.2",
+    "jszip": "^3.10.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-image-crop": "^11.0.5"

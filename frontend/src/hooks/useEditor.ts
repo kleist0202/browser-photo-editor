@@ -1,6 +1,7 @@
 import { useReducer, useCallback, useEffect, useRef } from "react";
 import type { PixelCrop } from "react-image-crop";
 import jsPDF from "jspdf";
+import JSZip from "jszip";
 import { warpPerspective, type Point } from "../utils/homography";
 import { saveState, loadState, clearState } from "../utils/storage";
 
@@ -209,6 +210,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onload = () => resolve(img);
     img.src = src;
   });
+}
+
+export function buildFilterString(
+  brightness: number,
+  contrast: number,
+  saturation: number,
+  hue: number = 0,
+  temperature: number = 0,
+): string {
+  let f = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`;
+  if (hue !== 0) f += ` hue-rotate(${hue}deg)`;
+  if (temperature > 0) f += ` sepia(${temperature / 100})`;
+  else if (temperature < 0) f += ` hue-rotate(180deg) sepia(${-temperature / 100}) hue-rotate(180deg)`;
+  return f;
 }
 
 export type DownloadOpts = {
@@ -571,13 +586,15 @@ export function useEditor() {
     brightness: number,
     contrast: number,
     saturation: number,
+    hue: number = 0,
+    temperature: number = 0,
   ): Promise<string> => {
     const img = await loadImage(src);
     const canvas = document.createElement("canvas");
     canvas.width = img.width;
     canvas.height = img.height;
     const ctx = canvas.getContext("2d")!;
-    ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100})`;
+    ctx.filter = buildFilterString(brightness, contrast, saturation, hue, temperature);
     ctx.drawImage(img, 0, 0);
     return canvas.toDataURL("image/png");
   }, []);
@@ -697,11 +714,50 @@ export function useEditor() {
     doc.save("scan.pdf");
   }, []);
 
+  const downloadZip = useCallback(async (
+    pages: { src: string }[],
+    format: "jpeg" | "png" = "jpeg",
+    quality: number = 90,
+  ): Promise<void> => {
+    if (pages.length === 0) return;
+    const zip = new JSZip();
+    const ext = format === "jpeg" ? "jpg" : "png";
+
+    for (let i = 0; i < pages.length; i++) {
+      const img = await loadImage(pages[i].src);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+      if (format === "jpeg") {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, img.width, img.height);
+      }
+      ctx.drawImage(img, 0, 0);
+      const blob = await canvasToBlob(
+        canvas,
+        `image/${format}`,
+        format === "jpeg" ? quality / 100 : undefined,
+      );
+      const padded = String(i + 1).padStart(String(pages.length).length, "0");
+      zip.file(`page-${padded}.${ext}`, blob);
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pages.zip";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, []);
+
   const downloadPrintable = useCallback(async (
     src: string,
     printWMm: number,
     printHMm: number,
     pdfOpts: { format: "a4" | "letter"; orientation: "portrait" | "landscape" | "auto" },
+    copies: number = 1,
   ): Promise<void> => {
     const ptPerMm = 72 / 25.4;
     const orientation = pdfOpts.orientation === "auto" ? "portrait" : pdfOpts.orientation;
@@ -717,9 +773,25 @@ export function useEditor() {
     ctx.drawImage(img, 0, 0);
     const jpegUrl = canvas.toDataURL("image/jpeg", 0.85);
 
-    doc.addImage(jpegUrl, "JPEG", 0, 0, printWMm * ptPerMm, printHMm * ptPerMm);
+    const pageWPt = doc.internal.pageSize.getWidth();
+    const pageHPt = doc.internal.pageSize.getHeight();
+    const wPt = printWMm * ptPerMm;
+    const hPt = printHMm * ptPerMm;
+    const cols = Math.max(1, Math.floor(pageWPt / wPt));
+    const rowsPerPage = Math.max(1, Math.floor(pageHPt / hPt));
+    const perPage = cols * rowsPerPage;
+    const total = Math.max(1, copies);
+
+    for (let i = 0; i < total; i++) {
+      const local = i % perPage;
+      if (i > 0 && local === 0) doc.addPage(pdfOpts.format, orientation);
+      const c = local % cols;
+      const r = Math.floor(local / cols);
+      doc.addImage(jpegUrl, "JPEG", c * wPt, r * hPt, wPt, hPt);
+    }
+
     doc.save("print.pdf");
   }, []);
 
-  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable };
+  return { state, dispatch, loadFile, applyRotation, applyFlip, applyCrop, applyFilters, applyScan, applyPerspective, applyBlur, applyAutoEnhance, applySharpen, applyAnnotations, applyCollage, download, downloadPdf, downloadPrintable, downloadZip };
 }
