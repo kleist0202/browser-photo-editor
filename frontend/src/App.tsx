@@ -14,6 +14,7 @@ import AnnotateOverlay from "./components/AnnotateOverlay";
 import CollageOverlay, { type CollageItem, type CollageOrientation } from "./components/CollageOverlay";
 import PdfBar from "./components/PdfBar";
 import PrintSizeBar from "./components/PrintSizeBar";
+import Slideshow from "./components/Slideshow";
 import { useEditor, buildFilterString } from "./hooks/useEditor";
 import type { Point } from "./utils/homography";
 
@@ -57,6 +58,7 @@ export default function App() {
   const [collageCanvas, setCollageCanvas] = useState({ w: 600, h: 800 });
   const [printMode, setPrintMode] = useState(false);
   const [printCopies, setPrintCopies] = useState(1);
+  const [slideshowMode, setSlideshowMode] = useState(false);
   const [printCopiesText, setPrintCopiesText] = useState("1");
   useEffect(() => { setPrintCopiesText(String(printCopies)); }, [printCopies]);
   const [sharpenedSrcs, setSharpenedSrcs] = useState<Set<string>>(new Set());
@@ -471,6 +473,7 @@ export default function App() {
         return;
       }
       if (mod) return;
+      if (slideshowMode) return;
 
       if (k === "escape") {
         if (perspMode) setPerspMode(false);
@@ -688,6 +691,7 @@ export default function App() {
               onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
               onDownloadZip={() => downloadZip(state.pages)}
+              onSlideshow={() => setSlideshowMode(true)}
             />
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-w-lg">
@@ -737,6 +741,7 @@ export default function App() {
               onDownload={() => downloadPdf(state.pages, pdfMargin, { format: pdfFormat, orientation: pdfOrientation })}
               onCollage={handleCollage}
               onDownloadZip={() => downloadZip(state.pages)}
+              onSlideshow={() => setSlideshowMode(true)}
             />
 
             {/* Proporcje, filtry, skan */}
@@ -984,6 +989,13 @@ export default function App() {
           </>
         )}
       </main>
+
+      {slideshowMode && (
+        <Slideshow
+          pages={state.pages.map(p => p.src)}
+          onClose={() => setSlideshowMode(false)}
+        />
+      )}
 
       <input
         ref={addPhotoInputRef}

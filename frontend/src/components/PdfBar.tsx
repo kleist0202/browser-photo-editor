@@ -17,6 +17,7 @@ type Props = {
   onDownload: () => void;
   onCollage: () => void;
   onDownloadZip: () => void;
+  onSlideshow: () => void;
 };
 
 type DragState = {
@@ -32,7 +33,7 @@ const MOVE_THRESHOLD_PX = 8;
 export default function PdfBar({
   pages, editingIndex, currentSrc, margin, onMarginChange,
   format, onFormatChange, orientation, onOrientationChange,
-  onRemove, onReorder, onSelect, onClear, onDownload, onCollage, onDownloadZip,
+  onRemove, onReorder, onSelect, onClear, onDownload, onCollage, onDownloadZip, onSlideshow,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -253,6 +254,15 @@ export default function PdfBar({
           text-gray-200 border border-gray-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
       >
         🎴 Kolaż
+      </button>
+      <button
+        onClick={onSlideshow}
+        disabled={pages.length === 0}
+        title="Pokaz slajdów"
+        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700
+          text-gray-200 border border-gray-700 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        ▶ Pokaz
       </button>
       <button
         onClick={onDownload}
